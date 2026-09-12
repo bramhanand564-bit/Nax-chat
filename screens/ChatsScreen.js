@@ -1,17 +1,20 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
+import { useTheme } from '../context/ThemeContext';
 
 export default function ChatsScreen() {
+  const { isDark } = useTheme();
+
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Chats 💬</Text>
-      <Text style={styles.sub}>No new messages...</Text>
+    <View style={[styles.container, { backgroundColor: isDark ? '#121212' : '#F5F5F7' }]}>
+      <Text style={[styles.title, { color: isDark ? '#FFFFFF' : '#000000' }]}>Chats</Text>
+      <Text style={styles.sub}>No new messages</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0d0d12', justifyContent: 'center', alignItems: 'center' },
-  title: { color: '#ffffff', fontSize: 28, fontWeight: 'bold' },
-  sub: { color: '#666', marginTop: 10 }
+  container: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  title: { fontSize: 26, fontWeight: '600' },
+  sub: { color: '#888', marginTop: 8 }
 });
