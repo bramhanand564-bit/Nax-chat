@@ -4,6 +4,9 @@
     "slug": "nax-chat",
     "version": "1.0.0",
     "orientation": "portrait",
+    "splash": {
+      "backgroundColor": "#0a0a0a"
+    },
     "android": {
       "package": "com.naxchat.app"
     },
