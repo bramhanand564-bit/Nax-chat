@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Image 
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 
-export default function ChatRoomScreen() {
+export default function ChatRoomScreen({ navigation }) {
   const { isDark } = useTheme();
 
   const bg = isDark ? '#121212' : '#F5F5F7';
@@ -17,7 +17,7 @@ export default function ChatRoomScreen() {
       
       {/* 1. Header (Profile Photo & Name) */}
       <View style={[styles.header, { borderBottomColor: borderCol, backgroundColor: bg }]}>
-        <TouchableOpacity style={styles.backBtn}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
           <Ionicons name="chevron-back" size={28} color="#007AFF" />
         </TouchableOpacity>
         <Image source={{ uri: 'https://randomuser.me/api/portraits/women/44.jpg' }} style={styles.avatar} />
