@@ -1,0 +1,11 @@
+{
+  "expo": {
+    "name": "Nax Chat",
+    "slug": "nax-chat",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "android": {
+      "package": "com.naxchat.app"
+    }
+  }
+}
