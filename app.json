@@ -6,6 +6,9 @@
     "orientation": "portrait",
     "android": {
       "package": "com.naxchat.app"
+    },
+    "ios": {
+      "bundleIdentifier": "com.naxchat.app"
     }
   }
 }
