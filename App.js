@@ -1,18 +1,30 @@
 import React, { useState } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, SafeAreaView } from 'react-native';
+
+// 1. Navigation Tools
+import { NavigationContainer } from '@react-navigation/native';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
+
+// 2. Context & Themes
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 
+// 3. All Screens
 import ChatsScreen from './screens/ChatsScreen';
 import PortalsScreen from './screens/PortalsScreen';
 import MomentsScreen from './screens/MomentsScreen';
 import WalletScreen from './screens/WalletScreen';
+import ChatRoomScreen from './screens/ChatRoomScreen'; // नई चैट रूम स्क्रीन
 
-function MainApp() {
+const Stack = createNativeStackNavigator();
+
+// 4. Main App Content (Bottom Tabs + Switching)
+function MainAppTabs({ navigation }) {
   const [activeTab, setActiveTab] = useState('Chats');
   const { isDark } = useTheme();
 
   const renderScreen = () => {
-    if (activeTab === 'Chats') return <ChatsScreen />;
+    // यहाँ हमने ChatsScreen को 'navigation' पास किया है ताकि वो आगे छलांग लगा सके
+    if (activeTab === 'Chats') return <ChatsScreen navigation={navigation} />;
     if (activeTab === 'Portals') return <PortalsScreen />;
     if (activeTab === 'Moments') return <MomentsScreen />;
     if (activeTab === 'Wallet') return <WalletScreen />;
@@ -23,6 +35,8 @@ function MainApp() {
       <View style={styles.content}>
         {renderScreen()}
       </View>
+      
+      {/* Bottom Floating Nav Bar */}
       <View style={[
         styles.glassNavBar, 
         { 
@@ -46,10 +60,21 @@ function MainApp() {
   );
 }
 
+// 5. App Component (Stack Navigator wrap)
 export default function App() {
   return (
     <ThemeProvider>
-      <MainApp />
+      <NavigationContainer>
+        <Stack.Navigator screenOptions={{ headerShown: false }}>
+          
+          {/* Pehli screen (Jisme 4 tabs hain) */}
+          <Stack.Screen name="HomeTabs" component={MainAppTabs} />
+          
+          {/* Dusri screen (Chat ke andar jane wali) */}
+          <Stack.Screen name="ChatRoom" component={ChatRoomScreen} />
+          
+        </Stack.Navigator>
+      </NavigationContainer>
     </ThemeProvider>
   );
 }
