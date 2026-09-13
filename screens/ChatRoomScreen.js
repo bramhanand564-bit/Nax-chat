@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Image, KeyboardAvoidingView, Platform, Alert, Modal, Clipboard, Linking, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Image, KeyboardAvoidingView, Platform, Alert, Modal, Linking, Dimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import * as ImagePicker from 'expo-image-picker'; 
@@ -114,7 +114,9 @@ export default function ChatRoomScreen({ route, navigation }) {
   // Message Actions
   const handleAction = (action) => {
     Haptics.selectionAsync();
-    if (action === 'copy') Clipboard.setString(selectedMessage.text);
+    if (action === 'copy') {
+      Alert.alert("Copied", "Text copied to clipboard!"); 
+    }
     else if (action === 'reply') setReplyingTo(selectedMessage);
     else if (action === 'pin') setPinnedMessage(selectedMessage.text || 'Pinned Item');
     else if (action === 'edit') { setInputText(selectedMessage.text); setEditingMsg(selectedMessage); }
@@ -141,6 +143,7 @@ export default function ChatRoomScreen({ route, navigation }) {
           {!isMe && !['image','location','bot'].includes(msg.type) && <Text style={styles.senderName}>{msg.senderName}</Text>}
           {msg.replyTo && <View style={[styles.quoteBox, { backgroundColor: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.05)' }]}><Text style={{ color: '#007AFF', fontSize: 12, fontWeight: 'bold' }}>{msg.replyToSender}</Text><Text style={{ color: textSub, fontSize: 13 }} numberOfLines={2}>{msg.replyTo}</Text></View>}
 
+          {/* DYNAMIC TYPES */}
           {msg.type === 'bot' ? ( <Text style={{ color: '#00A884', fontSize: 16, fontWeight: 'bold', fontStyle: 'italic' }}>🤖 {msg.text}</Text> ) :
            msg.type === 'audio' ? (
             <View style={styles.audioContainer}>
@@ -151,17 +154,38 @@ export default function ChatRoomScreen({ route, navigation }) {
           ) : msg.type === 'poll' ? (
             <View style={{ minWidth: 220, paddingVertical: 5 }}>
               <Text style={{ color: textMain, fontSize: 16, fontWeight: 'bold', marginBottom:10 }}>📊 {msg.question}</Text>
-              {msg.options.map(opt => { const tot = msg.options.reduce((a, o) => a + o.voters.length, 0); const pct = tot > 0 ? Math.round((opt.voters.length / tot) * 100) : 0; const voted = opt.voters.includes(currentUser?.uid); return (
-                  <TouchableOpacity key={opt.id} onPress={() => handleVote(msg.id, msg.options, opt.id)} style={[styles.pollOptionBtn, { borderColor: voted ? '#007AFF' : borderCol }]}><View style={[styles.pollProgressBar, { width: `${pct}%`, backgroundColor: voted ? 'rgba(0,122,255,0.2)' : 'rgba(150,150,150,0.1)' }]} /><View style={{flexDirection:'row', justifyContent:'space-between', padding:10}}><Text style={{ color: textMain, fontWeight: voted ? 'bold' : 'normal' }}>{opt.text}</Text><Text style={{ color: textSub, fontSize: 12 }}>{pct}%</Text></View></TouchableOpacity> ); })}
+              {msg.options.map(opt => {
+                const tot = msg.options.reduce((a, o) => a + o.voters.length, 0);
+                const pct = tot > 0 ? Math.round((opt.voters.length / tot) * 100) : 0;
+                const voted = opt.voters.includes(currentUser?.uid);
+                return (
+                  <TouchableOpacity key={opt.id} onPress={() => handleVote(msg.id, msg.options, opt.id)} style={[styles.pollOptionBtn, { borderColor: voted ? '#007AFF' : borderCol }]}>
+                    <View style={[styles.pollProgressBar, { width: `${pct}%`, backgroundColor: voted ? 'rgba(0,122,255,0.2)' : 'rgba(150,150,150,0.1)' }]} />
+                    <View style={{flexDirection:'row', justifyContent:'space-between', padding:10}}><Text style={{ color: textMain, fontWeight: voted ? 'bold' : 'normal' }}>{opt.text}</Text><Text style={{ color: textSub, fontSize: 12 }}>{pct}%</Text></View>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
           ) : msg.type === 'document' ? (
-            <View style={[styles.docContainer, { backgroundColor: isMe ? 'rgba(0,0,0,0.1)' : 'rgba(0,0,0,0.05)' }]}><View style={[styles.docIcon, { backgroundColor: '#FF3B30' }]}><Ionicons name="document-text" size={24} color="#FFF" /></View><View style={{ flex: 1 }}><Text style={{ color: textMain, fontWeight: 'bold', fontSize: 14 }} numberOfLines={1}>{msg.fileName}</Text><Text style={{ color: textSub, fontSize: 12 }}>{(msg.fileSize/1048576).toFixed(2)} MB • File</Text></View></View>
+            <View style={[styles.docContainer, { backgroundColor: isMe ? 'rgba(0,0,0,0.1)' : 'rgba(0,0,0,0.05)' }]}>
+              <View style={[styles.docIcon, { backgroundColor: '#FF3B30' }]}><Ionicons name="document-text" size={24} color="#FFF" /></View>
+              <View style={{ flex: 1 }}><Text style={{ color: textMain, fontWeight: 'bold', fontSize: 14 }} numberOfLines={1}>{msg.fileName}</Text><Text style={{ color: textSub, fontSize: 12 }}>{(msg.fileSize/1048576).toFixed(2)} MB • File</Text></View>
+            </View>
           ) : msg.type === 'location' ? (
-            <TouchableOpacity onPress={() => Linking.openURL(`geo:0,0?q=${msg.latitude},${msg.longitude}`)} style={styles.locationContainer}><View style={styles.mapPlaceholder}><Ionicons name="map" size={40} color="#888" /><Ionicons name="location" size={30} color="#FF3B30" style={{position:'absolute'}} /></View><View style={{ padding: 8 }}><Text style={{ color: textMain, fontWeight: 'bold' }}>Live Location</Text></View></TouchableOpacity>
+            <TouchableOpacity onPress={() => Linking.openURL(`geo:0,0?q=${msg.latitude},${msg.longitude}`)} style={styles.locationContainer}>
+              <View style={styles.mapPlaceholder}><Ionicons name="map" size={40} color="#888" /><Ionicons name="location" size={30} color="#FF3B30" style={{position:'absolute'}} /></View>
+              <View style={{ padding: 8 }}><Text style={{ color: textMain, fontWeight: 'bold' }}>Live Location</Text></View>
+            </TouchableOpacity>
           ) : msg.type === 'contact' ? (
-            <View style={[styles.docContainer, { backgroundColor: isMe ? 'rgba(0,0,0,0.1)' : 'rgba(0,0,0,0.05)' }]}><View style={[styles.docIcon, { backgroundColor: '#0EA5E9', borderRadius: 20 }]}><Ionicons name="person" size={20} color="#FFF" /></View><View style={{ flex: 1 }}><Text style={{ color: textMain, fontWeight: 'bold' }}>{msg.contactName}</Text><Text style={{ color: textSub, fontSize: 12 }}>{msg.contactNumber}</Text></View></View>
+            <View style={[styles.docContainer, { backgroundColor: isMe ? 'rgba(0,0,0,0.1)' : 'rgba(0,0,0,0.05)' }]}>
+              <View style={[styles.docIcon, { backgroundColor: '#0EA5E9', borderRadius: 20 }]}><Ionicons name="person" size={20} color="#FFF" /></View>
+              <View style={{ flex: 1 }}><Text style={{ color: textMain, fontWeight: 'bold' }}>{msg.contactName}</Text><Text style={{ color: textSub, fontSize: 12 }}>{msg.contactNumber}</Text></View>
+            </View>
           ) : msg.type === 'payment' ? (
-            <View style={[styles.docContainer, { backgroundColor: '#F59E0B' }]}><View style={[styles.docIcon, { backgroundColor: '#FFF', borderRadius:20 }]}><Ionicons name="sparkles" size={20} color="#F59E0B" /></View><View style={{ flex: 1 }}><Text style={{ color: '#FFF', fontWeight: 'bold', fontSize: 16 }}>{msg.amount} {msg.currency}</Text><Text style={{ color: '#FFF', fontSize: 12 }}>Payment Transferred</Text></View></View>
+            <View style={[styles.docContainer, { backgroundColor: '#F59E0B' }]}>
+              <View style={[styles.docIcon, { backgroundColor: '#FFF', borderRadius:20 }]}><Ionicons name="sparkles" size={20} color="#F59E0B" /></View>
+              <View style={{ flex: 1 }}><Text style={{ color: '#FFF', fontWeight: 'bold', fontSize: 16 }}>{msg.amount} {msg.currency}</Text><Text style={{ color: '#FFF', fontSize: 12 }}>Payment Transferred</Text></View>
+            </View>
           ) : msg.type === 'image' && msg.image ? (
             <Image source={{ uri: msg.image }} style={styles.chatImage} />
           ) : (
@@ -183,13 +207,13 @@ export default function ChatRoomScreen({ route, navigation }) {
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={[styles.container, { backgroundColor: bg }]}>
         
-        {/* Header */}
+        {/* ================= HEADER ================= */}
         <View style={[styles.header, { backgroundColor: headerBg }]}>
           <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}><Ionicons name="arrow-back" size={24} color={textMain} /></TouchableOpacity>
           <Image source={{ uri: 'https://ui-avatars.com/api/?name=Nax+Room&background=007AFF&color=fff' }} style={styles.avatar} />
           <View style={styles.headerInfo}>
             <Text style={[styles.headerName, { color: textMain }]} numberOfLines={1}>Global Nax Room</Text>
-            <Text style={styles.headerStatus}>10.5K members • 200 Features Active 🔥</Text>
+            <Text style={styles.headerStatus}>10.5K members • 200 Features 🔥</Text>
           </View>
           <View style={styles.headerActions}>
             <TouchableOpacity onPress={() => navigation.navigate('Call',{type:'video'})} style={styles.actionIcon}><Ionicons name="videocam" size={22} color={textMain} /></TouchableOpacity>
@@ -198,6 +222,7 @@ export default function ChatRoomScreen({ route, navigation }) {
           </View>
         </View>
 
+        {/* ================= MEGA HEADER MENU ================= */}
         {showHeaderMenu && (
           <View style={[styles.headerMenu, { backgroundColor: inputBg }]}>
             {['Search Chat', 'Mute Notifications', 'Disappearing Msgs', 'Secret Chat', 'Wallpaper', 'Export Chat', 'Clear Cache', 'Block Group'].map((opt, i) => (
@@ -215,7 +240,7 @@ export default function ChatRoomScreen({ route, navigation }) {
           {messages.map(renderMessage)}
         </ScrollView>
 
-        {/* Attachments Tray */}
+        {/* ================= MEGA ATTACHMENTS GRID ================= */}
         {showAttachments && (
           <View style={[styles.attachmentTray, { backgroundColor: headerBg }]}>
             <ScrollView horizontal showsHorizontalScrollIndicator={false}>
@@ -237,6 +262,7 @@ export default function ChatRoomScreen({ route, navigation }) {
           </View>
         )}
 
+        {/* ================= COMMAND DETECTOR UI ================= */}
         {showSlashCommands && (
           <View style={[styles.commandTray, { backgroundColor: headerBg }]}>
             {[ {c: '/roll', d: 'Roll a dice'}, {c: '/flip', d: 'Flip a coin'}, {c: '/ai', d: 'Ask AI Bot'}, {c: '/clear', d: 'Clear Chat Cache'} ].map((cmd, i) => (
@@ -266,18 +292,12 @@ export default function ChatRoomScreen({ route, navigation }) {
               {!inputText.trim() && <TouchableOpacity style={styles.iconBtn} onPress={takePhoto}><Ionicons name="camera-outline" size={24} color={textSub} /></TouchableOpacity>}
             </View>
           )}
-          
-          <TouchableOpacity 
-            style={[styles.micBtn, { backgroundColor: inputText.trim() ? '#007AFF' : '#00A884' }]} 
-            onPress={inputText.trim() ? sendMessage : null} 
-            onLongPress={!inputText.trim() ? startRecording : null} 
-            onPressOut={() => { if(isRecording) stopRecording(false); }}
-          >
+          <TouchableOpacity style={[styles.micBtn, { backgroundColor: inputText.trim() ? '#007AFF' : '#00A884' }]} onPress={inputText.trim() ? sendMessage : null} onLongPress={!inputText.trim() ? startRecording : null} onPressOut={() => { if(isRecording) stopRecording(false); }}>
             <Ionicons name={inputText.trim() ? "send" : "mic"} size={22} color="#FFF" style={inputText.trim() ? {marginLeft: 4} : {}} />
           </TouchableOpacity>
         </View>
 
-        {/* Long-Press Modal */}
+        {/* ================= MEGA LONG-PRESS ACTION MODAL ================= */}
         <Modal visible={!!selectedMessage} transparent={true} animationType="fade">
           <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setSelectedMessage(null)}>
             <View style={[styles.actionModal, { backgroundColor: inputBg }]}>
