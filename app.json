@@ -13,11 +13,36 @@
       "package": "com.nax.chat"
     },
     "plugins": [
-      [ "expo-camera", { "cameraPermission": "Allow Nax Chat to access your camera." } ],
-      [ "expo-image-picker", { "photosPermission": "Allow Nax Chat to access your gallery." } ],
-      [ "expo-av", { "microphonePermission": "Allow Nax Chat to access your microphone." } ],
-      [ "expo-location", { "locationAlwaysAndWhenInUsePermission": "Allow Nax Chat to share your live location." } ],
-      [ "expo-contacts", { "contactsPermission": "Allow Nax Chat to share contacts." } ]
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Nax Chat to access your camera."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow Nax Chat to access your gallery."
+        }
+      ],
+      [
+        "expo-av",
+        {
+          "microphonePermission": "Allow Nax Chat to access your microphone."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Allow Nax Chat to share your live location."
+        }
+      ],
+      [
+        "expo-contacts",
+        {
+          "contactsPermission": "Allow Nax Chat to share contacts."
+        }
+      ]
     ]
   }
 }
