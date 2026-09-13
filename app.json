@@ -5,13 +5,20 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
+
+    "splash": {
+      "backgroundColor": "#FFFFFF"
+    },
+
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.nax.chat"
     },
+
     "android": {
       "package": "com.nax.chat"
     },
+
     "plugins": [
       [
         "expo-camera",
