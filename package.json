@@ -23,6 +23,7 @@
     "expo-location": "~17.0.1",
     "expo-document-picker": "~12.0.2",
     "expo-contacts": "~13.0.1",
-    "expo-haptics": "~13.0.1"
+    "expo-haptics": "~13.0.1",
+    "expo-clipboard": "~6.0.3"
   }
 }
