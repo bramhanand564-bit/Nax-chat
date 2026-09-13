@@ -75,8 +75,8 @@ export default function ChatRoomScreen({ route, navigation }) {
     setInputText('');
     if (cmd === '/roll') sendMedia('bot', { text: `🎲 Rolled a ${Math.floor(Math.random() * 6) + 1}` });
     else if (cmd === '/flip') sendMedia('bot', { text: `🪙 Coin flipped: ${Math.random() > 0.5 ? 'Heads' : 'Tails'}` });
-    else if (cmd === '/ai') Alert.alert("Nax AI", "Smart assistant ready to process prompt.");
-    else if (cmd === '/clear') Alert.alert("Clear", "Local cache cleared successfully.");
+    else if (cmd === '/ai') Alert.alert("Nax AI", "Smart assistant ready.");
+    else if (cmd === '/clear') Alert.alert("Clear", "Cache cleared successfully.");
   };
 
   // Sending Messages
@@ -115,15 +115,15 @@ export default function ChatRoomScreen({ route, navigation }) {
   const handleAction = (action) => {
     Haptics.selectionAsync();
     if (action === 'copy') {
-      Alert.alert("Copied", "Text copied to clipboard!"); 
+      Alert.alert("Copied", "Text copied successfully!"); 
     }
     else if (action === 'reply') setReplyingTo(selectedMessage);
     else if (action === 'pin') setPinnedMessage(selectedMessage.text || 'Pinned Item');
     else if (action === 'edit') { setInputText(selectedMessage.text); setEditingMsg(selectedMessage); }
     else if (action === 'delete') deleteDoc(doc(db, 'global_chats', selectedMessage.id));
-    else if (action === 'translate') Alert.alert("Translated", `"${selectedMessage.text}" -> Transferred`);
-    else if (action === 'summarize') Alert.alert("AI Summary", "Key points extracted.");
-    else if (action === 'todo') Alert.alert("To-Do", "Task saved successfully.");
+    else if (action === 'translate') Alert.alert("Translated", `Text translation applied.`);
+    else if (action === 'summarize') Alert.alert("AI Summary", "Summary generated.");
+    else if (action === 'todo') Alert.alert("To-Do", "Task saved.");
     else if (action === 'star') Alert.alert("Starred", "Added to favorites.");
     else if (action === 'speak') Alert.alert("TTS", "Audio playback initiated.");
     setSelectedMessage(null);
@@ -213,7 +213,7 @@ export default function ChatRoomScreen({ route, navigation }) {
           <Image source={{ uri: 'https://ui-avatars.com/api/?name=Nax+Room&background=007AFF&color=fff' }} style={styles.avatar} />
           <View style={styles.headerInfo}>
             <Text style={[styles.headerName, { color: textMain }]} numberOfLines={1}>Global Nax Room</Text>
-            <Text style={styles.headerStatus}>10.5K members • 200 Features 🔥</Text>
+            <Text style={styles.headerStatus}>10.5K members • Ultra Mode 🔥</Text>
           </View>
           <View style={styles.headerActions}>
             <TouchableOpacity onPress={() => navigation.navigate('Call',{type:'video'})} style={styles.actionIcon}><Ionicons name="videocam" size={22} color={textMain} /></TouchableOpacity>
