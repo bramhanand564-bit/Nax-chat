@@ -36,6 +36,12 @@
         {
           "locationAlwaysAndWhenInUsePermission": "Allow Nax Chat to share your live location."
         }
+      ],
+      [
+        "expo-contacts",
+        {
+          "contactsPermission": "Allow Nax Chat to share contacts."
+        }
       ]
     ]
   }
