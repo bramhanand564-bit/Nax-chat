@@ -12,7 +12,8 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.nax.chat"
     },
     "android": {
       "adaptiveIcon": {
@@ -28,13 +29,19 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Allow Nax Chat to access your camera for video calls and photos."
+          "cameraPermission": "Allow Nax Chat to access your camera."
         }
       ],
       [
         "expo-image-picker",
         {
-          "photosPermission": "Allow Nax Chat to access your gallery to share photos."
+          "photosPermission": "Allow Nax Chat to access your gallery."
+        }
+      ],
+      [
+        "expo-av",
+        {
+          "microphonePermission": "Allow Nax Chat to access your microphone for voice notes."
         }
       ]
     ]
