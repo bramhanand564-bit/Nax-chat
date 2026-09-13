@@ -4,20 +4,20 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 
-// Firebase Auth Import
 import { auth } from './firebaseConfig';
 import { onAuthStateChanged } from 'firebase/auth';
 
 import ChatsScreen from './screens/ChatsScreen';
 import PortalsScreen from './screens/PortalsScreen';
 import MomentsScreen from './screens/MomentsScreen';
-import WalletScreen from './screens/WalletScreen';
+import WalletScreen from './screens/WalletScreen'; 
 import ChatRoomScreen from './screens/ChatRoomScreen';
-import AuthScreen from './screens/AuthScreen'; // नयी लॉगिन स्क्रीन
+import AuthScreen from './screens/AuthScreen'; 
 
 const Stack = createNativeStackNavigator();
 
 function MainAppTabs({ navigation }) {
+  // डिफ़ॉल्ट टैब Chats रहेगा
   const [activeTab, setActiveTab] = useState('Chats');
   const { isDark } = useTheme();
 
@@ -25,14 +25,16 @@ function MainAppTabs({ navigation }) {
     if (activeTab === 'Chats') return <ChatsScreen navigation={navigation} />;
     if (activeTab === 'Portals') return <PortalsScreen />;
     if (activeTab === 'Moments') return <MomentsScreen />;
-    if (activeTab === 'Wallet') return <WalletScreen />;
+    // यहाँ हमने टैब का नाम 'Settings' कर दिया है, लेकिन फ़ाइल WalletScreen ही कॉल होगी
+    if (activeTab === 'Settings') return <WalletScreen />; 
   };
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: isDark ? '#121212' : '#F5F5F7' }]}>
       <View style={styles.content}>{renderScreen()}</View>
       <View style={[styles.glassNavBar, { backgroundColor: isDark ? 'rgba(30,30,30,0.85)' : 'rgba(255,255,255,0.85)', borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)' }]}>
-        {['Chats', 'Portals', 'Moments', 'Wallet'].map((tab) => (
+        {/* यहाँ Wallet की जगह Settings कर दिया है */}
+        {['Chats', 'Portals', 'Moments', 'Settings'].map((tab) => (
           <TouchableOpacity key={tab} onPress={() => setActiveTab(tab)} style={styles.navItem}>
             <Text style={[styles.navText, { color: activeTab === tab ? (isDark ? '#FFFFFF' : '#000000') : '#888888' }, activeTab === tab && styles.activeText]}>{tab}</Text>
           </TouchableOpacity>
@@ -42,7 +44,6 @@ function MainAppTabs({ navigation }) {
   );
 }
 
-// यह नेविगेटर चेक करेगा कि यूज़र लॉगिन है या नहीं
 function AppNavigator() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -67,7 +68,6 @@ function AppNavigator() {
   return (
     <NavigationContainer>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
-        {/* अगर यूज़र है, तो मेन ऐप दिखाओ, वरना लॉगिन स्क्रीन दिखाओ */}
         {user ? (
           <>
             <Stack.Screen name="HomeTabs" component={MainAppTabs} />
