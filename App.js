@@ -14,7 +14,8 @@ import ChatRoomScreen from './screens/ChatRoomScreen';
 import AuthScreen from './screens/AuthScreen';
 import TicTacToeScreen from './screens/TicTacToeScreen';
 import NaxStudioScreen from './screens/NaxStudioScreen';
-import BotChatScreen from './screens/BotChatScreen'; // <-- Bot Chat Import
+import BotChatScreen from './screens/BotChatScreen';
+import CallScreen from './screens/CallScreen'; // <-- Call Screen आ गई!
 
 const Stack = createNativeStackNavigator();
 
@@ -73,7 +74,8 @@ function AppNavigator() {
             <Stack.Screen name="ChatRoom" component={ChatRoomScreen} />
             <Stack.Screen name="TicTacToe" component={TicTacToeScreen} />
             <Stack.Screen name="NaxStudio" component={NaxStudioScreen} />
-            <Stack.Screen name="BotChat" component={BotChatScreen} /> {/* <-- Bot Chat Route */}
+            <Stack.Screen name="BotChat" component={BotChatScreen} />
+            <Stack.Screen name="Call" component={CallScreen} /> {/* <-- राउट सेट कर दिया */}
           </>
         ) : (
           <Stack.Screen name="Auth" component={AuthScreen} />
