@@ -26,7 +26,8 @@
     "@expo/vector-icons": "^14.0.2",
     "react-native-webview": "13.8.6",
     "expo-file-system": "~17.0.1",
-    "expo-media-library": "~16.0.4"
+    "expo-media-library": "~16.0.4",
+    "expo-camera": "~15.0.16"
   },
   "devDependencies": {
     "@babel/core": "^7.20.0"
