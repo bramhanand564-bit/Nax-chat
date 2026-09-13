@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Image, KeyboardAvoidingView, Platform, Alert, Modal, Clipboard } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useTheme } from '../context/ThemeContext';
-import { db, auth } from '../firebaseConfig';
+import { useTheme } from './context/ThemeContext';
+import { db, auth } from './firebaseConfig';
 import { collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, doc, deleteDoc, updateDoc } from 'firebase/firestore';
 
 export default function ChatRoomScreen({ route, navigation }) {
