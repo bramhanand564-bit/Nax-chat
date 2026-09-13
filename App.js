@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Image, KeyboardAvoidingView, Platform, Alert, Modal, Clipboard } from 'react-native';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Image, KeyboardAvoidingView, Platform, Alert, Modal } from 'react-native';
+import Clipboard from '@react-native-clipboard/clipboard';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from './context/ThemeContext';
 import { db, auth } from './firebaseConfig';
@@ -65,14 +66,19 @@ export default function ChatRoomScreen({ route, navigation }) {
 
   const handleDelete = async () => {
     if (selectedMessage) {
-      await deleteDoc(doc(db, 'global_chats', selectedMessage.id));
+      try {
+        await deleteDoc(doc(db, 'global_chats', selectedMessage.id));
+      } catch (e) {
+        console.log('Delete error', e);
+      }
       setSelectedMessage(null);
     }
   };
 
   const handleAction = (action) => {
+    if (!selectedMessage) return;
     if (action === 'copy') {
-      Clipboard.setString(selectedMessage.text);
+      Clipboard.setString(selectedMessage.text || '');
       Alert.alert("Copied", "Text copied to clipboard");
     } else if (action === 'reply') {
       setReplyingTo(selectedMessage);
@@ -84,14 +90,18 @@ export default function ChatRoomScreen({ route, navigation }) {
 
   const handleReaction = async (emoji) => {
     if (selectedMessage) {
-      await updateDoc(doc(db, 'global_chats', selectedMessage.id), { reaction: emoji });
+      try {
+        await updateDoc(doc(db, 'global_chats', selectedMessage.id), { reaction: emoji });
+      } catch (e) {
+        console.log('Reaction error', e);
+      }
       setSelectedMessage(null);
     }
   };
 
   const renderMessage = (msg) => {
     const isMe = msg.senderId === currentUser?.uid;
-    const msgTime = msg.createdAt ? new Date(msg.createdAt.toDate()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '...';
+    const msgTime = msg.createdAt && msg.createdAt.toDate ? new Date(msg.createdAt.toDate()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '...';
     
     return (
       <View key={msg.id} style={[styles.messageRow, { justifyContent: isMe ? 'flex-end' : 'flex-start' }]}>
@@ -139,7 +149,7 @@ export default function ChatRoomScreen({ route, navigation }) {
           
           <View style={styles.headerInfo}>
             <Text style={[styles.headerName, { color: textMain }]} numberOfLines={1}>Global Nax Room</Text>
-            <Text style={styles.headerStatus}>10.5K members, 120 online</Text>
+            <Text style={[styles.headerStatus, { color: textSub }]}>10.5K members, 120 online</Text>
           </View>
 
           <View style={styles.headerActions}>
@@ -315,7 +325,7 @@ const styles = StyleSheet.create({
   avatar: { width: 40, height: 40, borderRadius: 20 },
   headerInfo: { flex: 1, marginLeft: 10 },
   headerName: { fontSize: 18, fontWeight: 'bold' },
-  headerStatus: { fontSize: 13, color: '#888' },
+  headerStatus: { fontSize: 13 },
   headerActions: { flexDirection: 'row', alignItems: 'center' },
   actionIcon: { paddingHorizontal: 10 },
   headerMenu: { position: 'absolute', top: 90, right: 10, borderRadius: 10, paddingVertical: 5, elevation: 10, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 5, zIndex: 20, minWidth: 180 },
