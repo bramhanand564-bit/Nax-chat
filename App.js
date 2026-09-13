@@ -4,18 +4,17 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 
-// Firebase Auth Import
 import { auth } from './firebaseConfig';
 import { onAuthStateChanged } from 'firebase/auth';
 
-// All Screens
 import ChatsScreen from './screens/ChatsScreen';
 import PortalsScreen from './screens/PortalsScreen';
 import MomentsScreen from './screens/MomentsScreen';
 import WalletScreen from './screens/WalletScreen';
 import ChatRoomScreen from './screens/ChatRoomScreen';
 import AuthScreen from './screens/AuthScreen';
-import TicTacToeScreen from './screens/TicTacToeScreen'; // <-- यहाँ गेम लिंक हो गया है
+import TicTacToeScreen from './screens/TicTacToeScreen';
+import WebPortalScreen from './screens/WebPortalScreen'; // <-- नया बॉट इंजन इम्पोर्ट किया
 
 const Stack = createNativeStackNavigator();
 
@@ -25,7 +24,7 @@ function MainAppTabs({ navigation }) {
 
   const renderScreen = () => {
     if (activeTab === 'Chats') return <ChatsScreen navigation={navigation} />;
-    if (activeTab === 'Portals') return <PortalsScreen navigation={navigation} />; // Portals को भी नेविगेशन दे दिया
+    if (activeTab === 'Portals') return <PortalsScreen navigation={navigation} />; 
     if (activeTab === 'Moments') return <MomentsScreen />;
     if (activeTab === 'Settings') return <WalletScreen />; 
   };
@@ -33,7 +32,7 @@ function MainAppTabs({ navigation }) {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: isDark ? '#121212' : '#F5F5F7' }]}>
       <View style={styles.content}>{renderScreen()}</View>
-      <View style={[styles.glassNavBar, { backgroundColor: isDark ? 'rgba(30,30,30,0.85)' : 'rgba(255,255,255,0.85)', borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)' }]}>
+      <View style={[styles.glassNavBar, { backgroundColor: isDark ? 'rgba(30,30,30,0.85)', borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)' }]}>
         {['Chats', 'Portals', 'Moments', 'Settings'].map((tab) => (
           <TouchableOpacity key={tab} onPress={() => setActiveTab(tab)} style={styles.navItem}>
             <Text style={[styles.navText, { color: activeTab === tab ? (isDark ? '#FFFFFF' : '#000000') : '#888888' }, activeTab === tab && styles.activeText]}>{tab}</Text>
@@ -72,7 +71,8 @@ function AppNavigator() {
           <>
             <Stack.Screen name="HomeTabs" component={MainAppTabs} />
             <Stack.Screen name="ChatRoom" component={ChatRoomScreen} />
-            <Stack.Screen name="TicTacToe" component={TicTacToeScreen} /> {/* <-- यहाँ गेम का राउट बन गया है */}
+            <Stack.Screen name="TicTacToe" component={TicTacToeScreen} />
+            <Stack.Screen name="WebPortal" component={WebPortalScreen} /> {/* <-- राउट जोड़ दिया */}
           </>
         ) : (
           <Stack.Screen name="Auth" component={AuthScreen} />
