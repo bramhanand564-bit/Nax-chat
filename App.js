@@ -3,11 +3,9 @@ import { StyleSheet, Text, View, TouchableOpacity, SafeAreaView, ActivityIndicat
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
-
 import { auth } from './firebaseConfig';
 import { onAuthStateChanged } from 'firebase/auth';
 
-// All Screens
 import ChatsScreen from './screens/ChatsScreen';
 import PortalsScreen from './screens/PortalsScreen';
 import MomentsScreen from './screens/MomentsScreen';
@@ -15,7 +13,8 @@ import WalletScreen from './screens/WalletScreen';
 import ChatRoomScreen from './screens/ChatRoomScreen';
 import AuthScreen from './screens/AuthScreen';
 import TicTacToeScreen from './screens/TicTacToeScreen';
-import NaxStudioScreen from './screens/NaxStudioScreen'; // <-- आपका नया स्टूडियो
+import NaxStudioScreen from './screens/NaxStudioScreen';
+import BotChatScreen from './screens/BotChatScreen'; // <-- Bot Chat Import
 
 const Stack = createNativeStackNavigator();
 
@@ -74,6 +73,7 @@ function AppNavigator() {
             <Stack.Screen name="ChatRoom" component={ChatRoomScreen} />
             <Stack.Screen name="TicTacToe" component={TicTacToeScreen} />
             <Stack.Screen name="NaxStudio" component={NaxStudioScreen} />
+            <Stack.Screen name="BotChat" component={BotChatScreen} /> {/* <-- Bot Chat Route */}
           </>
         ) : (
           <Stack.Screen name="Auth" component={AuthScreen} />
