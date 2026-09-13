@@ -7,6 +7,7 @@ import { ThemeProvider, useTheme } from './context/ThemeContext';
 import { auth } from './firebaseConfig';
 import { onAuthStateChanged } from 'firebase/auth';
 
+// All Screens
 import ChatsScreen from './screens/ChatsScreen';
 import PortalsScreen from './screens/PortalsScreen';
 import MomentsScreen from './screens/MomentsScreen';
@@ -14,8 +15,7 @@ import WalletScreen from './screens/WalletScreen';
 import ChatRoomScreen from './screens/ChatRoomScreen';
 import AuthScreen from './screens/AuthScreen';
 import TicTacToeScreen from './screens/TicTacToeScreen';
-import WebPortalScreen from './screens/WebPortalScreen';
-import NaxStudioScreen from './screens/NaxStudioScreen'; // <-- Nax Studio Import कर लिया
+import NaxStudioScreen from './screens/NaxStudioScreen'; // <-- आपका नया स्टूडियो
 
 const Stack = createNativeStackNavigator();
 
@@ -73,8 +73,7 @@ function AppNavigator() {
             <Stack.Screen name="HomeTabs" component={MainAppTabs} />
             <Stack.Screen name="ChatRoom" component={ChatRoomScreen} />
             <Stack.Screen name="TicTacToe" component={TicTacToeScreen} />
-            <Stack.Screen name="WebPortal" component={WebPortalScreen} />
-            <Stack.Screen name="NaxStudio" component={NaxStudioScreen} /> {/* <-- Nax Studio Route */}
+            <Stack.Screen name="NaxStudio" component={NaxStudioScreen} />
           </>
         ) : (
           <Stack.Screen name="Auth" component={AuthScreen} />
