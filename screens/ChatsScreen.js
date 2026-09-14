@@ -34,6 +34,9 @@ import {
   where,
   getDocs,
   onSnapshot,
+  doc,
+  setDoc,
+  serverTimestamp,
 } from 'firebase/firestore';
 
 
@@ -52,6 +55,9 @@ export default function ChatsScreen({
     useState(true);
 
   const [searching, setSearching] =
+    useState(false);
+
+  const [openingChat, setOpeningChat] =
     useState(false);
 
   const [searchResult, setSearchResult] =
@@ -99,7 +105,7 @@ export default function ChatsScreen({
 
 
   /* =========================
-     REALTIME USER CHATS
+     REALTIME PRIVATE CHATS
   ========================= */
 
   useEffect(() => {
@@ -179,14 +185,35 @@ export default function ChatsScreen({
 
 
   /* =========================
+     NORMALIZE USERNAME
+  ========================= */
+
+  const normalizeUsername = (
+    value
+  ) => {
+    let username =
+      String(value || '')
+        .trim()
+        .toLowerCase();
+
+    if (username.startsWith('@')) {
+      username =
+        username.substring(1);
+    }
+
+    return username;
+  };
+
+
+  /* =========================
      SEARCH USER
   ========================= */
 
   const handleSearch = async () => {
-    let username =
-      searchQuery
-        .trim()
-        .toLowerCase();
+    const username =
+      normalizeUsername(
+        searchQuery
+      );
 
     if (!username) {
       Alert.alert(
@@ -196,15 +223,20 @@ export default function ChatsScreen({
       return;
     }
 
-    if (username.startsWith('@')) {
-      username =
-        username.substring(1);
-    }
-
     if (!currentUser?.uid) {
       Alert.alert(
         'Login required',
         'Pehle login karo.'
+      );
+      return;
+    }
+
+    if (
+      username.length < 3
+    ) {
+      Alert.alert(
+        'Invalid username',
+        'Username kam se kam 3 characters ka hona chahiye.'
       );
       return;
     }
@@ -221,7 +253,7 @@ export default function ChatsScreen({
       const userQuery = query(
         usersRef,
         where(
-          'username',
+          'usernameLower',
           '==',
           username
         )
@@ -267,13 +299,13 @@ export default function ChatsScreen({
 
         username:
           data.username ||
-          username,
+          `@${username}`,
 
         name:
           data.name ||
           data.displayName ||
           data.username ||
-          username,
+          `@${username}`,
 
         avatar:
           data.avatar ||
@@ -298,12 +330,19 @@ export default function ChatsScreen({
 
 
   /* =========================
-     OPEN SEARCH RESULT
+     CREATE PRIVATE CHAT
   ========================= */
 
-  const openNewChat = (
+  const createPrivateChat = async (
     friend
   ) => {
+    if (
+      !currentUser?.uid ||
+      !friend?.uid
+    ) {
+      return null;
+    }
+
     const myId =
       currentUser.uid;
 
@@ -315,27 +354,209 @@ export default function ChatsScreen({
         ? `${myId}_${friendId}`
         : `${friendId}_${myId}`;
 
-    setSearchResult(null);
-    setSearchQuery('');
-    setShowNewMenu(false);
+    const myUsername =
+      normalizeUsername(
+        currentUser.displayName ||
+        currentUser.email ||
+        'user'
+      );
 
-    navigation.navigate(
-      'ChatRoom',
-      {
-        chatId,
+    const myProfileRef =
+      doc(
+        db,
+        'users',
+        myId
+      );
 
-        chatName:
-          friend.name,
+    const friendProfileRef =
+      doc(
+        db,
+        'users',
+        friendId
+      );
 
-        friendId,
+    let myProfile = null;
 
-        friendUsername:
-          friend.username,
+    try {
+      const myProfileSnap =
+        await getDocs(
+          query(
+            collection(db, 'users'),
+            where(
+              'uid',
+              '==',
+              myId
+            )
+          )
+        );
 
-        friendAvatar:
-          friend.avatar,
+      if (
+        !myProfileSnap.empty
+      ) {
+        myProfile =
+          myProfileSnap.docs[0].data();
       }
-    );
+    } catch (error) {
+      console.log(
+        'My profile lookup error:',
+        error
+      );
+    }
+
+    const myName =
+      myProfile?.name ||
+      myProfile?.displayName ||
+      currentUser.displayName ||
+      currentUser.email ||
+      'Nax User';
+
+    const myUsernameValue =
+      myProfile?.username ||
+      `@${myUsername}`;
+
+    const myChatRef =
+      doc(
+        db,
+        'users',
+        myId,
+        'user_chats',
+        chatId
+      );
+
+    const friendChatRef =
+      doc(
+        db,
+        'users',
+        friendId,
+        'user_chats',
+        chatId
+      );
+
+    await Promise.all([
+      setDoc(
+        myChatRef,
+        {
+          chatId,
+          type: 'private',
+
+          friendId,
+
+          friendName:
+            friend.name ||
+            'Nax User',
+
+          friendUsername:
+            friend.username ||
+            '',
+
+          friendAvatar:
+            friend.avatar ||
+            '',
+
+          updatedAt:
+            serverTimestamp(),
+        },
+        {
+          merge: true,
+        }
+      ),
+
+      setDoc(
+        friendChatRef,
+        {
+          chatId,
+          type: 'private',
+
+          friendId: myId,
+
+          friendName:
+            myName,
+
+          friendUsername:
+            myUsernameValue,
+
+          friendAvatar:
+            myProfile?.avatar ||
+            myProfile?.photoURL ||
+            '',
+
+          updatedAt:
+            serverTimestamp(),
+        },
+        {
+          merge: true,
+        }
+      ),
+    ]);
+
+    return chatId;
+  };
+
+
+  /* =========================
+     OPEN SEARCH RESULT
+  ========================= */
+
+  const openNewChat = async (
+    friend
+  ) => {
+    if (
+      openingChat ||
+      !currentUser?.uid ||
+      !friend?.uid
+    ) {
+      return;
+    }
+
+    setOpeningChat(true);
+
+    try {
+      const chatId =
+        await createPrivateChat(
+          friend
+        );
+
+      if (!chatId) {
+        throw new Error(
+          'Chat ID create nahi hua.'
+        );
+      }
+
+      setSearchResult(null);
+      setSearchQuery('');
+      setShowNewMenu(false);
+
+      navigation.navigate(
+        'ChatRoom',
+        {
+          chatId,
+
+          chatName:
+            friend.name,
+
+          friendId:
+            friend.uid,
+
+          friendUsername:
+            friend.username,
+
+          friendAvatar:
+            friend.avatar,
+        }
+      );
+    } catch (error) {
+      console.log(
+        'Open new chat error:',
+        error
+      );
+
+      Alert.alert(
+        'Chat Error',
+        'Private chat start nahi ho paayi.'
+      );
+    }
+
+    setOpeningChat(false);
   };
 
 
@@ -432,7 +653,7 @@ export default function ChatsScreen({
       item.username;
 
     if (username) {
-      return `@${username}`;
+      return `@${normalizeUsername(username)}`;
     }
 
     return 'Start chatting';
@@ -696,6 +917,7 @@ export default function ChatsScreen({
               searchResult
             )
           }
+          disabled={openingChat}
         >
           <Image
             source={getAvatar({
@@ -735,26 +957,38 @@ export default function ChatsScreen({
                 },
               ]}
             >
-              @{searchResult.username}
+              {searchResult.username
+                ?.startsWith('@')
+                ? searchResult.username
+                : `@${searchResult.username}`}
             </Text>
           </View>
 
           <View
             style={styles.chatButton}
           >
-            <Ionicons
-              name="chatbubble"
-              size={17}
-              color="#FFFFFF"
-            />
+            {openingChat ? (
+              <ActivityIndicator
+                size="small"
+                color="#FFFFFF"
+              />
+            ) : (
+              <>
+                <Ionicons
+                  name="chatbubble"
+                  size={17}
+                  color="#FFFFFF"
+                />
 
-            <Text
-              style={
-                styles.chatButtonText
-              }
-            >
-              Chat
-            </Text>
+                <Text
+                  style={
+                    styles.chatButtonText
+                  }
+                >
+                  Chat
+                </Text>
+              </>
+            )}
           </View>
         </TouchableOpacity>
       </View>
@@ -783,18 +1017,210 @@ export default function ChatsScreen({
 
 
   /* =========================
-     NEW CHAT MENU
+     NEW PRIVATE CHAT
   ========================= */
 
   const startNewChat = () => {
     setShowNewMenu(false);
 
-    setTimeout(() => {
-      Alert.alert(
-        'New Private Chat',
-        'Upar @username search karo.'
-      );
-    }, 150);
+    Alert.alert(
+      'New Private Chat',
+      'Upar @username search karo aur user ko select karo.'
+    );
+  };
+
+
+  /* =========================
+     GLOBAL CARD
+  ========================= */
+
+  const renderGlobalCard = () => {
+    return (
+      <TouchableOpacity
+        activeOpacity={0.84}
+        style={[
+          styles.globalCard,
+          {
+            backgroundColor:
+              isDark
+                ? '#10362E'
+                : '#EAF8F2',
+
+            borderColor:
+              isDark
+                ? 'rgba(60,220,150,0.18)'
+                : 'rgba(24,166,106,0.12)',
+          },
+        ]}
+        onPress={
+          openGlobalRoom
+        }
+      >
+        <View
+          style={[
+            styles.globalIcon,
+            {
+              backgroundColor:
+                '#18A66A',
+            },
+          ]}
+        >
+          <Ionicons
+            name="earth"
+            size={27}
+            color="#FFFFFF"
+          />
+        </View>
+
+        <View
+          style={styles.globalInfo}
+        >
+          <Text
+            style={[
+              styles.globalTitle,
+              {
+                color:
+                  textMain,
+              },
+            ]}
+          >
+            Global Chat
+          </Text>
+
+          <Text
+            style={[
+              styles.globalText,
+              {
+                color:
+                  textSub,
+              },
+            ]}
+            numberOfLines={2}
+          >
+            Chat with everyone
+            on Nax Chat
+          </Text>
+        </View>
+
+        <View
+          style={styles.globalArrow}
+        >
+          <Ionicons
+            name="arrow-forward"
+            size={20}
+            color="#18A66A"
+          />
+        </View>
+      </TouchableOpacity>
+    );
+  };
+
+
+  /* =========================
+     EMPTY PRIVATE CHATS
+  ========================= */
+
+  const renderEmptyState = () => {
+    return (
+      <View
+        style={styles.emptyState}
+      >
+        <View
+          style={[
+            styles.emptyIcon,
+            {
+              backgroundColor:
+                isDark
+                  ? '#122B3B'
+                  : '#E5F1FB',
+            },
+          ]}
+        >
+          <Ionicons
+            name="chatbubbles-outline"
+            size={52}
+            color={blue}
+          />
+        </View>
+
+        <Text
+          style={[
+            styles.emptyTitle,
+            {
+              color:
+                textMain,
+            },
+          ]}
+        >
+          No Private Chats Yet
+        </Text>
+
+        <Text
+          style={[
+            styles.emptyText,
+            {
+              color:
+                textSub,
+            },
+          ]}
+        >
+          Search a friend by
+          @username and start
+          chatting.
+        </Text>
+
+        <TouchableOpacity
+          activeOpacity={0.8}
+          style={
+            styles.emptyButton
+          }
+          onPress={() =>
+            setShowNewMenu(true)
+          }
+        >
+          <Ionicons
+            name="add"
+            size={20}
+            color="#FFFFFF"
+          />
+
+          <Text
+            style={
+              styles.emptyButtonText
+            }
+          >
+            Start New Chat
+          </Text>
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
+
+  /* =========================
+     LIST HEADER
+  ========================= */
+
+  const renderListHeader = () => {
+    return (
+      <View>
+        {renderSearchResult()}
+
+        {privateChats.length > 0 && (
+          <Text
+            style={[
+              styles.sectionTitle,
+              {
+                color:
+                  textSub,
+              },
+            ]}
+          >
+            PRIVATE CHATS
+          </Text>
+        )}
+      </View>
+    );
   };
 
 
@@ -826,17 +1252,31 @@ export default function ChatsScreen({
         <View
           style={styles.titleRow}
         >
-          <Text
-            style={[
-              styles.title,
-              {
-                color:
-                  textMain,
-              },
-            ]}
-          >
-            Chats
-          </Text>
+          <View>
+            <Text
+              style={[
+                styles.title,
+                {
+                  color:
+                    textMain,
+                },
+              ]}
+            >
+              Chats
+            </Text>
+
+            <Text
+              style={[
+                styles.subtitle,
+                {
+                  color:
+                    textSub,
+                },
+              ]}
+            >
+              Your private conversations
+            </Text>
+          </View>
 
           <TouchableOpacity
             activeOpacity={0.8}
@@ -862,7 +1302,7 @@ export default function ChatsScreen({
         </View>
 
 
-        {/* SEARCH */}
+        {/* USERNAME SEARCH */}
 
         <View
           style={[
@@ -905,43 +1345,38 @@ export default function ChatsScreen({
             returnKeyType="search"
           />
 
-          {searching ? (
+          {searchQuery.length > 0 && (
+            <TouchableOpacity
+              style={
+                styles.clearButton
+              }
+              onPress={() => {
+                setSearchQuery('');
+                setSearchResult(null);
+              }}
+            >
+              <Ionicons
+                name="close-circle"
+                size={20}
+                color={textSub}
+              />
+            </TouchableOpacity>
+          )}
+
+          {searching && (
             <ActivityIndicator
               size="small"
               color={blue}
-            />
-          ) : (
-            <TouchableOpacity
               style={
-                styles.findButton
+                styles.searchLoader
               }
-              onPress={
-                handleSearch
-              }
-            >
-              <Text
-                style={[
-                  styles.findText,
-                  {
-                    color:
-                      blue,
-                  },
-                ]}
-              >
-                Find
-              </Text>
-            </TouchableOpacity>
+            />
           )}
         </View>
       </View>
 
 
-      {/* SEARCH RESULT */}
-
-      {renderSearchResult()}
-
-
-      {/* CHAT LIST */}
+      {/* MAIN CONTENT */}
 
       {loading ? (
         <View
@@ -964,78 +1399,6 @@ export default function ChatsScreen({
             Loading chats...
           </Text>
         </View>
-      ) : privateChats.length === 0 ? (
-        <View
-          style={styles.emptyState}
-        >
-          <View
-            style={[
-              styles.emptyIcon,
-              {
-                backgroundColor:
-                  isDark
-                    ? '#122B3B'
-                    : '#E5F1FB',
-              },
-            ]}
-          >
-            <Ionicons
-              name="chatbubbles-outline"
-              size={52}
-              color={blue}
-            />
-          </View>
-
-          <Text
-            style={[
-              styles.emptyTitle,
-              {
-                color:
-                  textMain,
-              },
-            ]}
-          >
-            No Private Chats Yet
-          </Text>
-
-          <Text
-            style={[
-              styles.emptyText,
-              {
-                color:
-                  textSub,
-              },
-            ]}
-          >
-            Find a friend by
-            @username and start
-            chatting.
-          </Text>
-
-          <TouchableOpacity
-            activeOpacity={0.8}
-            style={
-              styles.emptyButton
-            }
-            onPress={() =>
-              setShowNewMenu(true)
-            }
-          >
-            <Ionicons
-              name="add"
-              size={20}
-              color="#FFFFFF"
-            />
-
-            <Text
-              style={
-                styles.emptyButtonText
-              }
-            >
-              Start New Chat
-            </Text>
-          </TouchableOpacity>
-        </View>
       ) : (
         <FlatList
           data={privateChats}
@@ -1045,31 +1408,30 @@ export default function ChatsScreen({
           renderItem={
             renderChatItem
           }
+          ListHeaderComponent={
+            renderListHeader
+          }
+          ListEmptyComponent={
+            renderEmptyState
+          }
+          ListFooterComponent={
+            <View
+              style={
+                styles.globalSection
+              }
+            >
+              {renderGlobalCard()}
+            </View>
+          }
           contentContainerStyle={
             styles.chatList
           }
           showsVerticalScrollIndicator={
             false
           }
+          keyboardShouldPersistTaps="handled"
         />
       )}
-
-
-      {/* GLOBAL */}
-
-      <TouchableOpacity
-        activeOpacity={0.85}
-        style={styles.fab}
-        onPress={
-          openGlobalRoom
-        }
-      >
-        <Ionicons
-          name="earth"
-          size={27}
-          color="#FFFFFF"
-        />
-      </TouchableOpacity>
 
 
       {/* NEW MENU */}
@@ -1077,7 +1439,7 @@ export default function ChatsScreen({
       <Modal
         visible={showNewMenu}
         transparent
-        animationType="fade"
+        animationType="slide"
         onRequestClose={() =>
           setShowNewMenu(false)
         }
@@ -1239,7 +1601,7 @@ export default function ChatsScreen({
                     },
                   ]}
                 >
-                  Global Room
+                  Global Chat
                 </Text>
 
                 <Text
@@ -1404,6 +1766,11 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
 
+  subtitle: {
+    marginTop: 2,
+    fontSize: 12,
+  },
+
   newButton: {
     height: 42,
     paddingHorizontal: 14,
@@ -1436,18 +1803,24 @@ const styles = StyleSheet.create({
     marginLeft: 10,
   },
 
-  findButton: {
-    paddingLeft: 8,
-    paddingVertical: 8,
+  clearButton: {
+    padding: 4,
   },
 
-  findText: {
-    fontSize: 15,
+  searchLoader: {
+    marginLeft: 8,
+  },
+
+  sectionTitle: {
+    fontSize: 11,
     fontWeight: '800',
+    letterSpacing: 1,
+    marginTop: 3,
+    marginBottom: 10,
   },
 
   resultBox: {
-    margin: 14,
+    marginBottom: 14,
     padding: 14,
     borderRadius: 18,
     borderWidth: 1,
@@ -1494,14 +1867,16 @@ const styles = StyleSheet.create({
   },
 
   chatButton: {
+    minWidth: 68,
+    height: 38,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 5,
     backgroundColor:
       '#1687FF',
     paddingHorizontal: 12,
-    paddingVertical: 9,
-    borderRadius: 18,
+    borderRadius: 19,
   },
 
   chatButtonText: {
@@ -1512,7 +1887,7 @@ const styles = StyleSheet.create({
 
   chatList: {
     padding: 14,
-    paddingBottom: 110,
+    paddingBottom: 115,
   },
 
   chatCard: {
@@ -1582,6 +1957,52 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
 
+  globalSection: {
+    marginTop: 5,
+  },
+
+  globalCard: {
+    minHeight: 82,
+    padding: 13,
+    borderRadius: 19,
+    borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+
+  globalIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  globalInfo: {
+    flex: 1,
+    marginLeft: 13,
+  },
+
+  globalTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+  },
+
+  globalText: {
+    marginTop: 4,
+    fontSize: 13,
+  },
+
+  globalArrow: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor:
+      'rgba(24,166,106,0.10)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
   loading: {
     flex: 1,
     alignItems: 'center',
@@ -1594,11 +2015,11 @@ const styles = StyleSheet.create({
   },
 
   emptyState: {
-    flex: 1,
+    minHeight: 390,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 35,
-    paddingBottom: 50,
+    paddingTop: 35,
   },
 
   emptyIcon: {
@@ -1639,20 +2060,6 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 15,
     fontWeight: '800',
-  },
-
-  fab: {
-    position: 'absolute',
-    right: 22,
-    bottom: 28,
-    width: 58,
-    height: 58,
-    borderRadius: 29,
-    backgroundColor:
-      '#1687FF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    elevation: 7,
   },
 
   modalOverlay: {
