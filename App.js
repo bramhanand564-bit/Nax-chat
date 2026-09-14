@@ -15,7 +15,8 @@ import {
 } from 'react-native';
 
 import {
-  NavigationContainer
+  NavigationContainer,
+  createNavigationContainerRef
 } from '@react-navigation/native';
 
 import {
@@ -67,6 +68,13 @@ import BotChatScreen from './screens/BotChatScreen';
 import CallScreen from './screens/CallScreen';
 
 const Stack = createNativeStackNavigator();
+
+const navigationRef =
+  createNavigationContainerRef();
+
+/* ---------------------------------- */
+/* MAIN TABS */
+/* ---------------------------------- */
 
 function MainAppTabs({ navigation }) {
   const [activeTab, setActiveTab] =
@@ -168,6 +176,10 @@ function MainAppTabs({ navigation }) {
   );
 }
 
+/* ---------------------------------- */
+/* PRESENCE */
+/* ---------------------------------- */
+
 function PresenceManager({ user }) {
   const appState =
     useRef(AppState.currentState);
@@ -241,7 +253,10 @@ function PresenceManager({ user }) {
           const isActive =
             nextState === 'active';
 
-          if (isActive && wasInactive) {
+          if (
+            isActive &&
+            wasInactive
+          ) {
             await setOnline();
           }
 
@@ -262,6 +277,10 @@ function PresenceManager({ user }) {
 
   return null;
 }
+
+/* ---------------------------------- */
+/* INCOMING P2P FILES */
+/* ---------------------------------- */
 
 function IncomingP2PTransferManager({
   user
@@ -478,6 +497,155 @@ function IncomingP2PTransferManager({
   return null;
 }
 
+/* ---------------------------------- */
+/* INCOMING CALLS */
+/* ---------------------------------- */
+
+function IncomingCallManager({ user }) {
+  const handledCalls =
+    useRef(new Set());
+
+  useEffect(() => {
+    if (!user?.uid) {
+      return undefined;
+    }
+
+    /*
+     * We only query receiverId here.
+     *
+     * This avoids requiring a Firestore
+     * composite index for receiverId +
+     * status.
+     */
+    const callsQuery = query(
+      collection(db, 'calls'),
+      where(
+        'receiverId',
+        '==',
+        user.uid
+      )
+    );
+
+    const unsubscribe = onSnapshot(
+      callsQuery,
+      (snapshot) => {
+        snapshot.docChanges().forEach(
+          (change) => {
+            if (
+              change.type !== 'added' &&
+              change.type !== 'modified'
+            ) {
+              return;
+            }
+
+            const callId =
+              change.doc.id;
+
+            const call =
+              change.doc.data();
+
+            if (
+              call.status !== 'ringing'
+            ) {
+              return;
+            }
+
+            if (
+              handledCalls.current.has(
+                callId
+              )
+            ) {
+              return;
+            }
+
+            handledCalls.current.add(
+              callId
+            );
+
+            const openCall = () => {
+              if (
+                !navigationRef.isReady()
+              ) {
+                handledCalls.current.delete(
+                  callId
+                );
+
+                return;
+              }
+
+              const currentRoute =
+                navigationRef.getCurrentRoute();
+
+              if (
+                currentRoute?.name ===
+                'Call'
+              ) {
+                console.log(
+                  'Already inside a call.'
+                );
+
+                return;
+              }
+
+              navigationRef.navigate(
+                'Call',
+                {
+                  callId,
+                  type:
+                    call.type ||
+                    'voice',
+
+                  name:
+                    call.callerName ||
+                    'Nax User',
+
+                  friendId:
+                    call.callerId ||
+                    null,
+
+                  isCaller: false
+                }
+              );
+            };
+
+            /*
+             * NavigationContainer can take
+             * a moment to become ready after
+             * authentication.
+             */
+            if (
+              navigationRef.isReady()
+            ) {
+              openCall();
+            } else {
+              setTimeout(
+                openCall,
+                700
+              );
+            }
+          }
+        );
+      },
+      (error) => {
+        console.log(
+          'Incoming call listener error:',
+          error
+        );
+      }
+    );
+
+    return () => {
+      unsubscribe();
+    };
+  }, [user]);
+
+  return null;
+}
+
+/* ---------------------------------- */
+/* APP NAVIGATOR */
+/* ---------------------------------- */
+
 function AppNavigator() {
   const [user, setUser] =
     useState(null);
@@ -533,10 +701,16 @@ function AppNavigator() {
           <IncomingP2PTransferManager
             user={user}
           />
+
+          <IncomingCallManager
+            user={user}
+          />
         </>
       )}
 
-      <NavigationContainer>
+      <NavigationContainer
+        ref={navigationRef}
+      >
         <Stack.Navigator
           screenOptions={{
             headerShown: false
@@ -586,6 +760,10 @@ function AppNavigator() {
   );
 }
 
+/* ---------------------------------- */
+/* APP */
+/* ---------------------------------- */
+
 export default function App() {
   return (
     <ThemeProvider>
@@ -593,6 +771,10 @@ export default function App() {
     </ThemeProvider>
   );
 }
+
+/* ---------------------------------- */
+/* STYLES */
+/* ---------------------------------- */
 
 const styles = StyleSheet.create({
   container: {
