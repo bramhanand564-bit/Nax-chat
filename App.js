@@ -65,6 +65,7 @@ import AuthScreen from './screens/AuthScreen';
 import TicTacToeScreen from './screens/TicTacToeScreen';
 import NaxStudioScreen from './screens/NaxStudioScreen';
 import BotChatScreen from './screens/BotChatScreen';
+import BotCreateScreen from './screens/BotCreateScreen';
 import CallScreen from './screens/CallScreen';
 
 const Stack = createNativeStackNavigator();
@@ -510,13 +511,6 @@ function IncomingCallManager({ user }) {
       return undefined;
     }
 
-    /*
-     * We only query receiverId here.
-     *
-     * This avoids requiring a Firestore
-     * composite index for receiverId +
-     * status.
-     */
     const callsQuery = query(
       collection(db, 'calls'),
       where(
@@ -608,11 +602,6 @@ function IncomingCallManager({ user }) {
               );
             };
 
-            /*
-             * NavigationContainer can take
-             * a moment to become ready after
-             * authentication.
-             */
             if (
               navigationRef.isReady()
             ) {
@@ -741,6 +730,11 @@ function AppNavigator() {
               <Stack.Screen
                 name="BotChat"
                 component={BotChatScreen}
+              />
+
+              <Stack.Screen
+                name="BotCreate"
+                component={BotCreateScreen}
               />
 
               <Stack.Screen
