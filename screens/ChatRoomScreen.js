@@ -18,6 +18,7 @@ import {
   Modal,
   Keyboard,
   Animated,
+  PermissionsAndroid,
 } from 'react-native';
 
 import {
@@ -33,6 +34,7 @@ import {
   collection,
   addDoc,
   query,
+  where,
   orderBy,
   onSnapshot,
   serverTimestamp,
@@ -41,6 +43,14 @@ import {
   updateDoc,
   increment,
 } from 'firebase/firestore';
+
+import {
+  RTCPeerConnection,
+  RTCIceCandidate,
+  RTCSessionDescription,
+  RTCView,
+  mediaDevices,
+} from 'react-native-webrtc';
 
 import { useTheme } from
   '../context/ThemeContext';
@@ -107,8 +117,63 @@ export default function ChatRoomScreen({
   const [showMenu, setShowMenu] =
     useState(false);
 
+  /* =========================
+     CALL STATE
+  ========================= */
+
+  const [callVisible, setCallVisible] =
+    useState(false);
+
+  const [callType, setCallType] =
+    useState('audio');
+
+  const [callState, setCallState] =
+    useState('idle');
+
+  const [incomingCall, setIncomingCall] =
+    useState(null);
+
+  const [localStream, setLocalStream] =
+    useState(null);
+
+  const [remoteStream, setRemoteStream] =
+    useState(null);
+
+  const [micEnabled, setMicEnabled] =
+    useState(true);
+
+  const [cameraEnabled, setCameraEnabled] =
+    useState(true);
+
+  const [speakerEnabled, setSpeakerEnabled] =
+    useState(true);
+
+  const [callError, setCallError] =
+    useState('');
+
   const listRef =
     useRef(null);
+
+  const peerRef =
+    useRef(null);
+
+  const localStreamRef =
+    useRef(null);
+
+  const remoteStreamRef =
+    useRef(null);
+
+  const callIdRef =
+    useRef(null);
+
+  const callListenerRef =
+    useRef(null);
+
+  const candidateListenersRef =
+    useRef([]);
+
+  const isCallerRef =
+    useRef(false);
 
 
   /* =========================
@@ -258,34 +323,35 @@ export default function ChatRoomScreen({
   ]);
 
 
-  const clearUnread = async () => {
-    try {
-      const ref = doc(
-        db,
-        'users',
-        currentUser.uid,
-        'user_chats',
-        chatId
-      );
+  const clearUnread =
+    async () => {
+      try {
+        const ref = doc(
+          db,
+          'users',
+          currentUser.uid,
+          'user_chats',
+          chatId
+        );
 
-      await setDoc(
-        ref,
-        {
-          unreadCount: 0,
-          openedAt:
-            serverTimestamp(),
-        },
-        {
-          merge: true,
-        }
-      );
-    } catch (error) {
-      console.log(
-        'Unread clear:',
-        error
-      );
-    }
-  };
+        await setDoc(
+          ref,
+          {
+            unreadCount: 0,
+            openedAt:
+              serverTimestamp(),
+          },
+          {
+            merge: true,
+          }
+        );
+      } catch (error) {
+        console.log(
+          'Unread clear:',
+          error
+        );
+      }
+    };
 
 
   /* =========================
@@ -782,47 +848,1596 @@ export default function ChatRoomScreen({
     };
 
 
+  /* =====================================================
+     WEBRTC CALLING
+  ===================================================== */
+
+
   /* =========================
-     MESSAGE ITEM
+     PERMISSIONS
   ========================= */
 
-  const renderMessage =
-    ({ item }) => {
-      const isMe =
-        item.senderId ===
-        currentUser?.uid;
+  const requestCallPermissions =
+    async (
+      type
+    ) => {
+      if (
+        Platform.OS !==
+        'android'
+      ) {
+        return true;
+      }
 
-      return (
-        <MessageBubble
-          item={item}
-          isMe={isMe}
-          onLongPress={
-            onLongPress
+      try {
+        const permissions = [
+          PermissionsAndroid.PERMISSIONS
+            .RECORD_AUDIO,
+        ];
+
+        if (
+          type === 'video'
+        ) {
+          permissions.push(
+            PermissionsAndroid
+              .PERMISSIONS
+              .CAMERA
+          );
+        }
+
+        const result =
+          await PermissionsAndroid
+            .requestMultiple(
+              permissions
+            );
+
+        const audioGranted =
+          result[
+            PermissionsAndroid
+              .PERMISSIONS
+              .RECORD_AUDIO
+          ] ===
+          PermissionsAndroid
+            .RESULTS
+            .GRANTED;
+
+        const cameraGranted =
+          type === 'audio' ||
+          result[
+            PermissionsAndroid
+              .PERMISSIONS
+              .CAMERA
+          ] ===
+          PermissionsAndroid
+            .RESULTS
+            .GRANTED;
+
+        if (
+          !audioGranted
+        ) {
+          Alert.alert(
+            'Microphone permission',
+            'Audio call ke liye microphone permission zaroori hai.'
+          );
+
+          return false;
+        }
+
+        if (
+          type === 'video' &&
+          !cameraGranted
+        ) {
+          Alert.alert(
+            'Camera permission',
+            'Video call ke liye camera permission zaroori hai.'
+          );
+
+          return false;
+        }
+
+        return true;
+
+      } catch (error) {
+        console.log(
+          'Permission error:',
+          error
+        );
+
+        Alert.alert(
+          'Permission Error',
+          'Call permissions nahi mil paayi.'
+        );
+
+        return false;
+      }
+    };
+
+
+  /* =========================
+     CREATE PEER
+  ========================= */
+
+  const createPeerConnection =
+    async () => {
+      const configuration = {
+        iceServers: [
+          {
+            urls:
+              'stun:stun.l.google.com:19302',
+          },
+          {
+            urls:
+              'stun:stun1.l.google.com:19302',
+          },
+          {
+            urls:
+              'stun:stun2.l.google.com:19302',
+          },
+        ],
+      };
+
+      const peer =
+        new RTCPeerConnection(
+          configuration
+        );
+
+      peer.ontrack =
+        (event) => {
+          if (
+            event.streams &&
+            event.streams[0]
+          ) {
+            const stream =
+              event.streams[0];
+
+            remoteStreamRef.current =
+              stream;
+
+            setRemoteStream(
+              stream
+            );
           }
-          getTime={getTime}
-        />
+        };
+
+      peer.onconnectionstatechange =
+        () => {
+          const state =
+            peer.connectionState;
+
+          console.log(
+            'WebRTC state:',
+            state
+          );
+
+          if (
+            state ===
+            'connected'
+          ) {
+            setCallState(
+              'connected'
+            );
+          }
+
+          if (
+            state ===
+              'failed' ||
+            state ===
+              'disconnected'
+          ) {
+            setCallError(
+              'Connection lost.'
+            );
+          }
+        };
+
+      peerRef.current =
+        peer;
+
+      return peer;
+    };
+
+
+  /* =========================
+     LOCAL MEDIA
+  ========================= */
+
+  const getLocalMedia =
+    async (
+      type
+    ) => {
+      const isVideo =
+        type === 'video';
+
+      const constraints = {
+        audio: true,
+
+        video: isVideo
+          ? {
+              facingMode:
+                'user',
+              width: 640,
+              height: 480,
+              frameRate: 24,
+            }
+          : false,
+      };
+
+      const stream =
+        await mediaDevices
+          .getUserMedia(
+            constraints
+          );
+
+      localStreamRef.current =
+        stream;
+
+      setLocalStream(
+        stream
+      );
+
+      setMicEnabled(true);
+
+      if (isVideo) {
+        setCameraEnabled(
+          true
+        );
+      }
+
+      return stream;
+    };
+
+
+  /* =========================
+     CANDIDATE CLEANUP
+  ========================= */
+
+  const clearCandidateListeners =
+    () => {
+      candidateListenersRef.current
+        .forEach(
+          (unsubscribe) => {
+            try {
+              unsubscribe();
+            } catch {}
+          }
+        );
+
+      candidateListenersRef.current =
+        [];
+    };
+
+
+  /* =========================
+     CALL CLEANUP
+  ========================= */
+
+  const cleanupCall =
+    async (
+      updateRemote = false
+    ) => {
+      const oldCallId =
+        callIdRef.current;
+
+      clearCandidateListeners();
+
+      if (
+        callListenerRef.current
+      ) {
+        try {
+          callListenerRef.current();
+        } catch {}
+
+        callListenerRef.current =
+          null;
+      }
+
+      if (
+        localStreamRef.current
+      ) {
+        localStreamRef.current
+          .getTracks()
+          .forEach(
+            (track) => {
+              try {
+                track.stop();
+              } catch {}
+            }
+          );
+      }
+
+      if (
+        peerRef.current
+      ) {
+        try {
+          peerRef.current.close();
+        } catch {}
+
+        peerRef.current =
+          null;
+      }
+
+      localStreamRef.current =
+        null;
+
+      remoteStreamRef.current =
+        null;
+
+      callIdRef.current =
+        null;
+
+      isCallerRef.current =
+        false;
+
+      setLocalStream(null);
+      setRemoteStream(null);
+
+      setCallVisible(false);
+      setIncomingCall(null);
+
+      setCallState('idle');
+      setCallError('');
+
+      setMicEnabled(true);
+      setCameraEnabled(true);
+
+      if (
+        updateRemote &&
+        oldCallId
+      ) {
+        try {
+          await updateDoc(
+            doc(
+              db,
+              'calls',
+              oldCallId
+            ),
+            {
+              status:
+                'ended',
+
+              endedAt:
+                serverTimestamp(),
+            }
+          );
+        } catch (error) {
+          console.log(
+            'Call end update:',
+            error
+          );
+        }
+      }
+    };
+
+
+  /* =========================
+     START CALL
+  ========================= */
+
+  const startCall =
+    async (
+      type
+    ) => {
+      if (!friendId) {
+        Alert.alert(
+          'Calling unavailable',
+          'Global Chat mein private calling available nahi hai.'
+        );
+
+        return;
+      }
+
+      if (
+        callState !==
+        'idle'
+      ) {
+        return;
+      }
+
+      const allowed =
+        await requestCallPermissions(
+          type
+        );
+
+      if (!allowed) {
+        return;
+      }
+
+      try {
+        setCallType(type);
+        setCallVisible(true);
+        setCallState(
+          'calling'
+        );
+        setCallError('');
+
+        isCallerRef.current =
+          true;
+
+        const stream =
+          await getLocalMedia(
+            type
+          );
+
+        const peer =
+          await createPeerConnection();
+
+        stream
+          .getTracks()
+          .forEach(
+            (track) => {
+              peer.addTrack(
+                track,
+                stream
+              );
+            }
+          );
+
+        const callRef =
+          doc(
+            collection(
+              db,
+              'calls'
+            )
+          );
+
+        callIdRef.current =
+          callRef.id;
+
+        peer.onicecandidate =
+          async (event) => {
+            if (
+              !event.candidate ||
+              !callIdRef.current
+            ) {
+              return;
+            }
+
+            try {
+              await addDoc(
+                collection(
+                  db,
+                  'calls',
+                  callIdRef.current,
+                  'callerCandidates'
+                ),
+                event.candidate.toJSON()
+              );
+            } catch (error) {
+              console.log(
+                'Caller ICE error:',
+                error
+              );
+            }
+          };
+
+        await setDoc(
+          callRef,
+          {
+            callerId:
+              currentUser.uid,
+
+            receiverId:
+              friendId,
+
+            chatId,
+
+            type,
+
+            status:
+              'ringing',
+
+            createdAt:
+              serverTimestamp(),
+          }
+        );
+
+        const offer =
+          await peer.createOffer({
+            offerToReceiveAudio:
+              true,
+
+            offerToReceiveVideo:
+              type === 'video',
+          });
+
+        await peer.setLocalDescription(
+          offer
+        );
+
+        await updateDoc(
+          callRef,
+          {
+            offer: {
+              type:
+                offer.type,
+
+              sdp:
+                offer.sdp,
+            },
+          }
+        );
+
+        /* ANSWER LISTENER */
+
+        const answerUnsubscribe =
+          onSnapshot(
+            callRef,
+            async (snapshot) => {
+              if (
+                !snapshot.exists()
+              ) {
+                return;
+              }
+
+              const data =
+                snapshot.data();
+
+              if (
+                data.answer &&
+                !peer.currentRemoteDescription
+              ) {
+                try {
+                  await peer.setRemoteDescription(
+                    new RTCSessionDescription(
+                      data.answer
+                    )
+                  );
+
+                  setCallState(
+                    'connecting'
+                  );
+                } catch (error) {
+                  console.log(
+                    'Set answer error:',
+                    error
+                  );
+                }
+              }
+
+              if (
+                data.status ===
+                'rejected'
+              ) {
+                Alert.alert(
+                  'Call Rejected',
+                  'The other user rejected the call.'
+                );
+
+                await cleanupCall(
+                  false
+                );
+              }
+
+              if (
+                data.status ===
+                'ended'
+              ) {
+                await cleanupCall(
+                  false
+                );
+              }
+            }
+          );
+
+        callListenerRef.current =
+          answerUnsubscribe;
+
+        /* RECEIVER ICE */
+
+        const receiverCandidates =
+          collection(
+            db,
+            'calls',
+            callRef.id,
+            'receiverCandidates'
+          );
+
+        const receiverUnsubscribe =
+          onSnapshot(
+            receiverCandidates,
+            (snapshot) => {
+              snapshot.docChanges()
+                .forEach(
+                  async (change) => {
+                    if (
+                      change.type !==
+                      'added'
+                    ) {
+                      return;
+                    }
+
+                    try {
+                      await peer.addIceCandidate(
+                        new RTCIceCandidate(
+                          change.doc.data()
+                        )
+                      );
+                    } catch (error) {
+                      console.log(
+                        'Receiver ICE error:',
+                        error
+                      );
+                    }
+                  }
+                );
+            }
+          );
+
+        candidateListenersRef.current
+          .push(
+            receiverUnsubscribe
+          );
+
+      } catch (error) {
+        console.log(
+          'Start call error:',
+          error
+        );
+
+        setCallError(
+          error?.message ||
+          'Call start nahi ho paayi.'
+        );
+
+        Alert.alert(
+          'Call Error',
+          error?.message ||
+          'Call start nahi ho paayi.'
+        );
+
+        await cleanupCall(
+          true
+        );
+      }
+    };
+
+
+  /* =========================
+     INCOMING CALL LISTENER
+  ========================= */
+
+  useEffect(() => {
+    if (
+      !currentUser?.uid
+    ) {
+      return;
+    }
+
+    if (!friendId) {
+      return;
+    }
+
+    if (!chatId) {
+      return;
+    }
+
+    const callsRef =
+      collection(
+        db,
+        'calls'
+      );
+
+    const callsQuery =
+      query(
+        callsRef,
+        where(
+          'receiverId',
+          '==',
+          currentUser.uid
+        )
+      );
+
+    const unsubscribe =
+      onSnapshot(
+        callsQuery,
+        (snapshot) => {
+          snapshot.docChanges()
+            .forEach(
+              (change) => {
+                if (
+                  change.type !==
+                  'added'
+                ) {
+                  return;
+                }
+
+                const data =
+                  change.doc.data();
+
+                if (
+                  data.status !==
+                  'ringing'
+                ) {
+                  return;
+                }
+
+                if (
+                  data.callerId ===
+                  currentUser.uid
+                ) {
+                  return;
+                }
+
+                if (
+                  data.receiverId !==
+                  currentUser.uid
+                ) {
+                  return;
+                }
+
+                if (
+                  data.chatId !==
+                  chatId
+                ) {
+                  return;
+                }
+
+                if (
+                  callIdRef.current
+                ) {
+                  return;
+                }
+
+                setIncomingCall({
+                  id:
+                    change.doc.id,
+
+                  callerId:
+                    data.callerId,
+
+                  type:
+                    data.type ||
+                    'audio',
+
+                  offer:
+                    data.offer ||
+                    null,
+                });
+              }
+            );
+        },
+        (error) => {
+          console.log(
+            'Incoming call listener:',
+            error
+          );
+        }
+      );
+
+    return () => {
+      unsubscribe();
+    };
+  }, [
+    currentUser?.uid,
+    friendId,
+    chatId,
+  ]);
+
+
+  /* =========================
+     ACCEPT CALL
+  ========================= */
+
+  const acceptCall =
+    async () => {
+      const call =
+        incomingCall;
+
+      if (
+        !call?.id ||
+        !call.offer
+      ) {
+        return;
+      }
+
+      const allowed =
+        await requestCallPermissions(
+          call.type
+        );
+
+      if (!allowed) {
+        return;
+      }
+
+      try {
+        setIncomingCall(null);
+
+        setCallType(
+          call.type
+        );
+
+        setCallVisible(true);
+
+        setCallState(
+          'connecting'
+        );
+
+        setCallError('');
+
+        isCallerRef.current =
+          false;
+
+        callIdRef.current =
+          call.id;
+
+        const stream =
+          await getLocalMedia(
+            call.type
+          );
+
+        const peer =
+          await createPeerConnection();
+
+        peer.onicecandidate =
+          async (event) => {
+            if (
+              !event.candidate ||
+              !callIdRef.current
+            ) {
+              return;
+            }
+
+            try {
+              await addDoc(
+                collection(
+                  db,
+                  'calls',
+                  call.id,
+                  'receiverCandidates'
+                ),
+                event.candidate.toJSON()
+              );
+            } catch (error) {
+              console.log(
+                'Receiver ICE error:',
+                error
+              );
+            }
+          };
+
+        stream
+          .getTracks()
+          .forEach(
+            (track) => {
+              peer.addTrack(
+                track,
+                stream
+              );
+            }
+          );
+
+        await peer.setRemoteDescription(
+          new RTCSessionDescription(
+            call.offer
+          )
+        );
+
+        const answer =
+          await peer.createAnswer();
+
+        await peer.setLocalDescription(
+          answer
+        );
+
+        await updateDoc(
+          doc(
+            db,
+            'calls',
+            call.id
+          ),
+          {
+            answer: {
+              type:
+                answer.type,
+
+              sdp:
+                answer.sdp,
+            },
+
+            status:
+              'connected',
+          }
+        );
+
+        /* CALLER ICE */
+
+        const callerCandidates =
+          collection(
+            db,
+            'calls',
+            call.id,
+            'callerCandidates'
+          );
+
+        const callerUnsubscribe =
+          onSnapshot(
+            callerCandidates,
+            (snapshot) => {
+              snapshot.docChanges()
+                .forEach(
+                  async (change) => {
+                    if (
+                      change.type !==
+                      'added'
+                    ) {
+                      return;
+                    }
+
+                    try {
+                      await peer.addIceCandidate(
+                        new RTCIceCandidate(
+                          change.doc.data()
+                        )
+                      );
+                    } catch (error) {
+                      console.log(
+                        'Caller ICE error:',
+                        error
+                      );
+                    }
+                  }
+                );
+            }
+          );
+
+        candidateListenersRef.current
+          .push(
+            callerUnsubscribe
+          );
+
+        /* CALL STATUS */
+
+        const callStatusUnsubscribe =
+          onSnapshot(
+            doc(
+              db,
+              'calls',
+              call.id
+            ),
+            async (snapshot) => {
+              if (
+                !snapshot.exists()
+              ) {
+                return;
+              }
+
+              const data =
+                snapshot.data();
+
+              if (
+                data.status ===
+                'ended'
+              ) {
+                await cleanupCall(
+                  false
+                );
+              }
+            }
+          );
+
+        callListenerRef.current =
+          callStatusUnsubscribe;
+
+      } catch (error) {
+        console.log(
+          'Accept call error:',
+          error
+        );
+
+        Alert.alert(
+          'Call Error',
+          error?.message ||
+          'Call accept nahi ho paayi.'
+        );
+
+        await cleanupCall(
+          true
+        );
+      }
+    };
+
+
+  /* =========================
+     REJECT CALL
+  ========================= */
+
+  const rejectCall =
+    async () => {
+      if (
+        !incomingCall?.id
+      ) {
+        setIncomingCall(null);
+        return;
+      }
+
+      try {
+        await updateDoc(
+          doc(
+            db,
+            'calls',
+            incomingCall.id
+          ),
+          {
+            status:
+              'rejected',
+
+            endedAt:
+              serverTimestamp(),
+          }
+        );
+      } catch (error) {
+        console.log(
+          'Reject call error:',
+          error
+        );
+      }
+
+      setIncomingCall(null);
+    };
+
+
+  /* =========================
+     END CALL
+  ========================= */
+
+  const endCall =
+    async () => {
+      await cleanupCall(
+        true
       );
     };
 
 
   /* =========================
-     CANCEL EDIT
+     MIC
   ========================= */
 
-  const cancelEdit =
+  const toggleMic =
     () => {
-      setEditingMessage(null);
-      setText('');
+      const stream =
+        localStreamRef.current;
+
+      if (!stream) {
+        return;
+      }
+
+      const tracks =
+        stream.getAudioTracks();
+
+      tracks.forEach(
+        (track) => {
+          track.enabled =
+            !track.enabled;
+        }
+      );
+
+      if (tracks.length) {
+        setMicEnabled(
+          tracks[0].enabled
+        );
+      }
     };
 
 
   /* =========================
-     CANCEL REPLY
+     CAMERA
   ========================= */
 
-  const cancelReply =
+  const toggleCamera =
     () => {
-      setReplyMessage(null);
+      const stream =
+        localStreamRef.current;
+
+      if (!stream) {
+        return;
+      }
+
+      const tracks =
+        stream.getVideoTracks();
+
+      if (!tracks.length) {
+        return;
+      }
+
+      tracks.forEach(
+        (track) => {
+          track.enabled =
+            !track.enabled;
+        }
+      );
+
+      setCameraEnabled(
+        tracks[0].enabled
+      );
+    };
+
+
+  /* =========================
+     SPEAKER
+  ========================= */
+
+  const toggleSpeaker =
+    () => {
+      const next =
+        !speakerEnabled;
+
+      setSpeakerEnabled(
+        next
+      );
+
+      try {
+        if (
+          typeof mediaDevices
+            .setAudioOutput ===
+          'function'
+        ) {
+          mediaDevices.setAudioOutput(
+            next
+              ? 'speaker'
+              : 'earpiece'
+          );
+        }
+      } catch (error) {
+        console.log(
+          'Speaker error:',
+          error
+        );
+      }
+    };
+
+
+  /* =========================
+     CLEANUP ON UNMOUNT
+  ========================= */
+
+  useEffect(() => {
+    return () => {
+      clearCandidateListeners();
+
+      if (
+        callListenerRef.current
+      ) {
+        try {
+          callListenerRef.current();
+        } catch {}
+      }
+
+      if (
+        localStreamRef.current
+      ) {
+        localStreamRef.current
+          .getTracks()
+          .forEach(
+            (track) => {
+              try {
+                track.stop();
+              } catch {}
+            }
+          );
+      }
+
+      if (
+        peerRef.current
+      ) {
+        try {
+          peerRef.current.close();
+        } catch {}
+      }
+    };
+  }, []);
+
+
+  /* =========================
+     CALL SCREEN
+  ========================= */
+
+  const renderCallScreen =
+    () => {
+      if (!callVisible) {
+        return null;
+      }
+
+      const isVideo =
+        callType ===
+        'video';
+
+      return (
+        <Modal
+          visible={callVisible}
+          animationType="fade"
+          statusBarTranslucent
+          onRequestClose={
+            endCall
+          }
+        >
+          <View
+            style={
+              styles.callScreen
+            }
+          >
+
+            {/* REMOTE VIDEO */}
+
+            {isVideo &&
+            remoteStream ? (
+              <RTCView
+                streamURL={
+                  remoteStream.toURL()
+                }
+                style={
+                  styles.remoteVideo
+                }
+                objectFit="cover"
+                mirror={false}
+              />
+            ) : (
+              <View
+                style={
+                  styles.audioCallBackground
+                }
+              >
+                <View
+                  style={
+                    styles.callAvatar
+                  }
+                >
+                  <Text
+                    style={
+                      styles.callAvatarText
+                    }
+                  >
+                    {chatTitle
+                      .charAt(0)
+                      .toUpperCase()}
+                  </Text>
+                </View>
+
+                <Text
+                  style={
+                    styles.callName
+                  }
+                >
+                  {chatTitle}
+                </Text>
+
+                <Text
+                  style={
+                    styles.callStatus
+                  }
+                >
+                  {callState ===
+                  'calling'
+                    ? 'Calling...'
+                    : callState ===
+                      'connecting'
+                    ? 'Connecting...'
+                    : callState ===
+                      'connected'
+                    ? 'Connected'
+                    : 'Calling...'}
+                </Text>
+              </View>
+            )}
+
+            {/* LOCAL VIDEO */}
+
+            {isVideo &&
+              localStream && (
+                <View
+                  style={
+                    styles.localVideoBox
+                  }
+                >
+                  <RTCView
+                    streamURL={
+                      localStream.toURL()
+                    }
+                    style={
+                      styles.localVideo
+                    }
+                    objectFit="cover"
+                    mirror
+                  />
+                </View>
+              )}
+
+            {/* TOP BAR */}
+
+            <View
+              style={
+                styles.callTopBar
+              }
+            >
+              <TouchableOpacity
+                style={
+                  styles.callTopButton
+                }
+                onPress={
+                  endCall
+                }
+              >
+                <Ionicons
+                  name="chevron-down"
+                  size={25}
+                  color="#FFFFFF"
+                />
+              </TouchableOpacity>
+
+              <View
+                style={
+                  styles.callTopInfo
+                }
+              >
+                <Text
+                  style={
+                    styles.callTopName
+                  }
+                  numberOfLines={1}
+                >
+                  {chatTitle}
+                </Text>
+
+                <Text
+                  style={
+                    styles.callTopStatus
+                  }
+                >
+                  {callState ===
+                  'connected'
+                    ? 'Connected'
+                    : callState ===
+                      'calling'
+                    ? 'Calling...'
+                    : 'Connecting...'}
+                </Text>
+              </View>
+            </View>
+
+            {/* ERROR */}
+
+            {!!callError && (
+              <View
+                style={
+                  styles.callErrorBox
+                }
+              >
+                <Text
+                  style={
+                    styles.callErrorText
+                  }
+                >
+                  {callError}
+                </Text>
+              </View>
+            )}
+
+            {/* CONTROLS */}
+
+            <View
+              style={
+                styles.callControls
+              }
+            >
+              <CallControl
+                icon={
+                  micEnabled
+                    ? 'mic'
+                    : 'mic-off'
+                }
+                label={
+                  micEnabled
+                    ? 'Mute'
+                    : 'Unmute'
+                }
+                active={
+                  micEnabled
+                }
+                onPress={
+                  toggleMic
+                }
+              />
+
+              {isVideo && (
+                <CallControl
+                  icon={
+                    cameraEnabled
+                      ? 'videocam'
+                      : 'videocam-off'
+                  }
+                  label={
+                    cameraEnabled
+                      ? 'Camera'
+                      : 'Camera Off'
+                  }
+                  active={
+                    cameraEnabled
+                  }
+                  onPress={
+                    toggleCamera
+                  }
+                />
+              )}
+
+              <CallControl
+                icon="volume-high"
+                label="Speaker"
+                active={
+                  speakerEnabled
+                }
+                onPress={
+                  toggleSpeaker
+                }
+              />
+
+              <TouchableOpacity
+                style={
+                  styles.endCallButton
+                }
+                onPress={
+                  endCall
+                }
+              >
+                <Ionicons
+                  name="call"
+                  size={25}
+                  color="#FFFFFF"
+                  style={{
+                    transform: [
+                      {
+                        rotate:
+                          '135deg',
+                      },
+                    ],
+                  }}
+                />
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      );
+    };
+
+
+  /* =========================
+     INCOMING CALL
+  ========================= */
+
+  const renderIncomingCall =
+    () => {
+      if (!incomingCall) {
+        return null;
+      }
+
+      const isVideo =
+        incomingCall.type ===
+        'video';
+
+      return (
+        <Modal
+          visible={true}
+          transparent
+          animationType="fade"
+          onRequestClose={
+            rejectCall
+          }
+        >
+          <View
+            style={
+              styles.incomingOverlay
+            }
+          >
+            <View
+              style={[
+                styles.incomingCard,
+                {
+                  backgroundColor:
+                    isDark
+                      ? '#10212D'
+                      : '#FFFFFF',
+                },
+              ]}
+            >
+              <View
+                style={
+                  styles.incomingIcon
+                }
+              >
+                <Ionicons
+                  name={
+                    isVideo
+                      ? 'videocam'
+                      : 'call'
+                  }
+                  size={30}
+                  color="#FFFFFF"
+                />
+              </View>
+
+              <Text
+                style={[
+                  styles.incomingTitle,
+                  {
+                    color:
+                      textMain,
+                  },
+                ]}
+              >
+                Incoming{' '}
+                {isVideo
+                  ? 'Video'
+                  : 'Audio'}{' '}
+                Call
+              </Text>
+
+              <Text
+                style={[
+                  styles.incomingName,
+                  {
+                    color:
+                      textMain,
+                  },
+                ]}
+                numberOfLines={1}
+              >
+                {chatTitle}
+              </Text>
+
+              <Text
+                style={[
+                  styles.incomingSub,
+                  {
+                    color:
+                      textSub,
+                  },
+                ]}
+              >
+                {isVideo
+                  ? 'Video call aa rahi hai'
+                  : 'Audio call aa rahi hai'}
+              </Text>
+
+              <View
+                style={
+                  styles.incomingButtons
+                }
+              >
+                <TouchableOpacity
+                  style={
+                    styles.rejectButton
+                  }
+                  onPress={
+                    rejectCall
+                  }
+                >
+                  <Ionicons
+                    name="close"
+                    size={26}
+                    color="#FFFFFF"
+                  />
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={
+                    styles.acceptButton
+                  }
+                  onPress={
+                    acceptCall
+                  }
+                >
+                  <Ionicons
+                    name={
+                      isVideo
+                        ? 'videocam'
+                        : 'call'
+                    }
+                    size={25}
+                    color="#FFFFFF"
+                  />
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+      );
     };
 
 
@@ -894,21 +2509,55 @@ export default function ChatRoomScreen({
           </Text>
         </View>
 
+        {/* AUDIO CALL */}
+
         <TouchableOpacity
           style={
             styles.headerButton
           }
+          disabled={
+            !friendId
+          }
           onPress={() =>
-            Alert.alert(
-              'Coming Soon',
-              'Voice and video calling next update me connect honge.'
+            startCall(
+              'audio'
             )
           }
         >
           <Ionicons
             name="call-outline"
             size={21}
-            color={textMain}
+            color={
+              friendId
+                ? textMain
+                : textSub
+            }
+          />
+        </TouchableOpacity>
+
+        {/* VIDEO CALL */}
+
+        <TouchableOpacity
+          style={
+            styles.headerButton
+          }
+          disabled={
+            !friendId
+          }
+          onPress={() =>
+            startCall(
+              'video'
+            )
+          }
+        >
+          <Ionicons
+            name="videocam-outline"
+            size={23}
+            color={
+              friendId
+                ? textMain
+                : textSub
+            }
           />
         </TouchableOpacity>
 
@@ -980,7 +2629,6 @@ export default function ChatRoomScreen({
           />
         )}
 
-
         {/* REPLY BAR */}
 
         {replyMessage && (
@@ -1041,7 +2689,6 @@ export default function ChatRoomScreen({
           </View>
         )}
 
-
         {/* EDIT BAR */}
 
         {editingMessage && (
@@ -1086,7 +2733,6 @@ export default function ChatRoomScreen({
           </View>
         )}
 
-
         {/* INPUT */}
 
         <View
@@ -1105,7 +2751,7 @@ export default function ChatRoomScreen({
             onPress={() =>
               Alert.alert(
                 'Attachments',
-                'Photo, video and document upload ko next step me Firebase Storage se connect karenge.'
+                'Photo, video and document upload ko next step me connect karenge.'
               )
             }
           >
@@ -1236,9 +2882,6 @@ export default function ChatRoomScreen({
               Message
             </Text>
 
-
-            {/* REACTIONS */}
-
             <View
               style={
                 styles.reactionsRow
@@ -1277,9 +2920,6 @@ export default function ChatRoomScreen({
               )}
             </View>
 
-
-            {/* REPLY */}
-
             <MenuButton
               icon="return-down-forward-outline"
               title="Reply"
@@ -1289,9 +2929,6 @@ export default function ChatRoomScreen({
                 )
               }
             />
-
-
-            {/* EDIT */}
 
             {selectedMessage
               ?.senderId ===
@@ -1306,9 +2943,6 @@ export default function ChatRoomScreen({
                 }
               />
             )}
-
-
-            {/* DELETE */}
 
             {selectedMessage
               ?.senderId ===
@@ -1340,7 +2974,6 @@ export default function ChatRoomScreen({
               />
             )}
 
-
             <TouchableOpacity
               style={
                 styles.cancelMenu
@@ -1362,8 +2995,30 @@ export default function ChatRoomScreen({
         </TouchableOpacity>
       </Modal>
 
+
+      {renderIncomingCall()}
+      {renderCallScreen()}
+
     </SafeAreaView>
   );
+}
+
+
+/* =========================
+   CANCEL EDIT
+========================= */
+
+function cancelEditPlaceholder() {
+  return null;
+}
+
+
+/* =========================
+   CANCEL REPLY
+========================= */
+
+function cancelReplyPlaceholder() {
+  return null;
 }
 
 
@@ -1487,9 +3142,6 @@ function MessageBubble({
               </Text>
             )}
 
-
-          {/* REPLY */}
-
           {item.replyToId && (
             <View
               style={
@@ -1529,9 +3181,6 @@ function MessageBubble({
             </View>
           )}
 
-
-          {/* TEXT */}
-
           {item.type === 'text' && (
             <Text
               style={[
@@ -1545,9 +3194,6 @@ function MessageBubble({
               {item.text}
             </Text>
           )}
-
-
-          {/* FOOTER */}
 
           <View
             style={
@@ -1590,9 +3236,6 @@ function MessageBubble({
             )}
           </View>
 
-
-          {/* REACTIONS */}
-
           {item.reactions &&
             Object.keys(
               item.reactions
@@ -1625,6 +3268,57 @@ function MessageBubble({
         </View>
       </TouchableOpacity>
     </Animated.View>
+  );
+}
+
+
+/* =========================
+   CALL CONTROL
+========================= */
+
+function CallControl({
+  icon,
+  label,
+  active,
+  onPress,
+}) {
+  return (
+    <TouchableOpacity
+      style={
+        styles.callControl
+      }
+      onPress={onPress}
+    >
+      <View
+        style={[
+          styles.callControlIcon,
+          {
+            backgroundColor:
+              active
+                ? 'rgba(255,255,255,.16)'
+                : '#FFFFFF',
+          },
+        ]}
+      >
+        <Ionicons
+          name={icon}
+          size={23}
+          color={
+            active
+              ? '#FFFFFF'
+              : '#111820'
+          }
+        />
+      </View>
+
+      <Text
+        style={
+          styles.callControlLabel
+        }
+      >
+        {label}
+      </Text>
+    </TouchableOpacity>
   );
 }
 
@@ -1670,9 +3364,9 @@ function MenuButton({
 }
 
 
-/* =========================
+/* =====================================================
    STYLES
-========================= */
+===================================================== */
 
 const styles =
   StyleSheet.create({
@@ -1689,14 +3383,14 @@ const styles =
     minHeight: 64,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 10,
+    paddingHorizontal: 7,
     borderBottomWidth: 1,
     borderBottomColor:
       'rgba(255,255,255,.06)',
   },
 
   backButton: {
-    width: 44,
+    width: 42,
     height: 44,
     alignItems: 'center',
     justifyContent:
@@ -1719,7 +3413,7 @@ const styles =
   },
 
   headerButton: {
-    width: 42,
+    width: 38,
     height: 42,
     alignItems: 'center',
     justifyContent:
@@ -1976,6 +3670,260 @@ const styles =
     justifyContent:
       'center',
   },
+
+  /* =====================
+     CALL SCREEN
+  ===================== */
+
+  callScreen: {
+    flex: 1,
+    backgroundColor:
+      '#050505',
+  },
+
+  remoteVideo: {
+    ...StyleSheet.absoluteFillObject,
+  },
+
+  audioCallBackground: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent:
+      'center',
+    backgroundColor:
+      '#07131D',
+  },
+
+  callAvatar: {
+    width: 110,
+    height: 110,
+    borderRadius: 55,
+    backgroundColor:
+      '#1687FF',
+    alignItems: 'center',
+    justifyContent:
+      'center',
+  },
+
+  callAvatarText: {
+    color: '#FFFFFF',
+    fontSize: 45,
+    fontWeight: '800',
+  },
+
+  callName: {
+    color: '#FFFFFF',
+    fontSize: 23,
+    fontWeight: '800',
+    marginTop: 20,
+  },
+
+  callStatus: {
+    color: '#AFC1CE',
+    fontSize: 15,
+    marginTop: 7,
+  },
+
+  localVideoBox: {
+    position: 'absolute',
+    top: 75,
+    right: 16,
+    width: 112,
+    height: 158,
+    borderRadius: 15,
+    overflow: 'hidden',
+    borderWidth: 2,
+    borderColor:
+      'rgba(255,255,255,.6)',
+  },
+
+  localVideo: {
+    flex: 1,
+  },
+
+  callTopBar: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    paddingTop: 12,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+
+  callTopButton: {
+    width: 45,
+    height: 45,
+    borderRadius: 23,
+    backgroundColor:
+      'rgba(0,0,0,.38)',
+    alignItems: 'center',
+    justifyContent:
+      'center',
+  },
+
+  callTopInfo: {
+    flex: 1,
+    alignItems: 'center',
+    marginRight: 45,
+  },
+
+  callTopName: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '800',
+  },
+
+  callTopStatus: {
+    color: '#C5D3DC',
+    fontSize: 12,
+    marginTop: 2,
+  },
+
+  callErrorBox: {
+    position: 'absolute',
+    top: 145,
+    left: 25,
+    right: 25,
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor:
+      'rgba(255,59,48,.85)',
+  },
+
+  callErrorText: {
+    color: '#FFFFFF',
+    textAlign: 'center',
+    fontSize: 13,
+  },
+
+  callControls: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 35,
+    minHeight: 100,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent:
+      'center',
+    gap: 15,
+  },
+
+  callControl: {
+    alignItems: 'center',
+    width: 62,
+  },
+
+  callControlIcon: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    alignItems: 'center',
+    justifyContent:
+      'center',
+  },
+
+  callControlLabel: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    marginTop: 5,
+  },
+
+  endCallButton: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor:
+      '#FF3B30',
+    alignItems: 'center',
+    justifyContent:
+      'center',
+    marginLeft: 4,
+  },
+
+  /* =====================
+     INCOMING CALL
+  ===================== */
+
+  incomingOverlay: {
+    flex: 1,
+    backgroundColor:
+      'rgba(0,0,0,.72)',
+    alignItems: 'center',
+    justifyContent:
+      'center',
+    padding: 25,
+  },
+
+  incomingCard: {
+    width: '100%',
+    maxWidth: 380,
+    borderRadius: 28,
+    padding: 28,
+    alignItems: 'center',
+  },
+
+  incomingIcon: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    backgroundColor:
+      '#1687FF',
+    alignItems: 'center',
+    justifyContent:
+      'center',
+    marginBottom: 18,
+  },
+
+  incomingTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+  },
+
+  incomingName: {
+    fontSize: 18,
+    fontWeight: '700',
+    marginTop: 8,
+  },
+
+  incomingSub: {
+    fontSize: 13,
+    marginTop: 5,
+  },
+
+  incomingButtons: {
+    flexDirection: 'row',
+    marginTop: 28,
+    gap: 35,
+  },
+
+  rejectButton: {
+    width: 62,
+    height: 62,
+    borderRadius: 31,
+    backgroundColor:
+      '#FF3B30',
+    alignItems: 'center',
+    justifyContent:
+      'center',
+  },
+
+  acceptButton: {
+    width: 62,
+    height: 62,
+    borderRadius: 31,
+    backgroundColor:
+      '#34C759',
+    alignItems: 'center',
+    justifyContent:
+      'center',
+  },
+
+  /* =====================
+     MESSAGE MENU
+  ===================== */
 
   menuOverlay: {
     flex: 1,
