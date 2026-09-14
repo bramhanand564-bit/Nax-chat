@@ -4,18 +4,18 @@ import {
   doc,
   onSnapshot,
   serverTimestamp,
-  setDoc,
   updateDoc
 } from 'firebase/firestore';
 
 import { db } from '../firebaseConfig';
+
 import {
   RTCPeerConnection,
   RTCSessionDescription,
   RTCIceCandidate
 } from 'react-native-webrtc';
 
-import * as FileSystem from 'expo-file-system/legacy';
+import * as FileSystem from 'expo-file-system';
 
 const ICE_SERVERS = [
   {
@@ -27,13 +27,21 @@ const ICE_SERVERS = [
 ];
 
 const CHUNK_SIZE = 12 * 1024;
-const MAX_P2P_FILE_SIZE = 15 * 1024 * 1024;
+
+const MAX_P2P_FILE_SIZE =
+  15 * 1024 * 1024;
 
 function getTransferRef(transferId) {
-  return doc(db, 'file_transfers', transferId);
+  return doc(
+    db,
+    'file_transfers',
+    transferId
+  );
 }
 
-function getOfferCandidatesRef(transferId) {
+function getOfferCandidatesRef(
+  transferId
+) {
   return collection(
     db,
     'file_transfers',
@@ -42,7 +50,9 @@ function getOfferCandidatesRef(transferId) {
   );
 }
 
-function getAnswerCandidatesRef(transferId) {
+function getAnswerCandidatesRef(
+  transferId
+) {
   return collection(
     db,
     'file_transfers',
@@ -51,12 +61,14 @@ function getAnswerCandidatesRef(transferId) {
   );
 }
 
-export function canUseP2PFileTransfer(fileSize) {
-  if (!Number.isFinite(fileSize)) {
-    return false;
-  }
-
-  return fileSize > 0 && fileSize <= MAX_P2P_FILE_SIZE;
+export function canUseP2PFileTransfer(
+  fileSize
+) {
+  return (
+    Number.isFinite(fileSize) &&
+    fileSize > 0 &&
+    fileSize <= MAX_P2P_FILE_SIZE
+  );
 }
 
 export function getP2PFileTransferLimit() {
@@ -67,37 +79,64 @@ function base64ToBytes(base64) {
   const chars =
     'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 
-  let bufferLength = base64.length * 0.75;
-  let len = base64.length;
+  let padding = 0;
 
   if (base64.endsWith('==')) {
-    bufferLength -= 2;
+    padding = 2;
   } else if (base64.endsWith('=')) {
-    bufferLength -= 1;
+    padding = 1;
   }
 
-  const bytes = new Uint8Array(Math.floor(bufferLength));
+  const byteLength =
+    Math.floor(
+      (base64.length * 3) / 4
+    ) - padding;
 
-  let p = 0;
+  const bytes =
+    new Uint8Array(byteLength);
 
-  for (let i = 0; i < len; i += 4) {
-    const encoded1 = chars.indexOf(base64[i]);
-    const encoded2 = chars.indexOf(base64[i + 1]);
-    const encoded3 = chars.indexOf(base64[i + 2]);
-    const encoded4 = chars.indexOf(base64[i + 3]);
+  let byteIndex = 0;
 
-    bytes[p++] = (encoded1 << 2) | (encoded2 >> 4);
+  for (
+    let i = 0;
+    i < base64.length;
+    i += 4
+  ) {
+    const a = chars.indexOf(
+      base64[i]
+    );
 
-    if (p < bytes.length && encoded3 !== -1) {
-      bytes[p++] =
-        ((encoded2 & 15) << 4) |
-        (encoded3 >> 2);
+    const b = chars.indexOf(
+      base64[i + 1]
+    );
+
+    const c =
+      base64[i + 2] === '='
+        ? 0
+        : chars.indexOf(
+            base64[i + 2]
+          );
+
+    const d =
+      base64[i + 3] === '='
+        ? 0
+        : chars.indexOf(
+            base64[i + 3]
+          );
+
+    if (byteIndex < bytes.length) {
+      bytes[byteIndex++] =
+        (a << 2) | (b >> 4);
     }
 
-    if (p < bytes.length && encoded4 !== -1) {
-      bytes[p++] =
-        ((encoded3 & 3) << 6) |
-        encoded4;
+    if (byteIndex < bytes.length) {
+      bytes[byteIndex++] =
+        ((b & 15) << 4) | (c >> 2);
+    }
+
+    if (byteIndex < bytes.length) {
+      bytes[byteIndex++] =
+        ((c & 3) << 6) | d;
     }
   }
 
@@ -119,40 +158,59 @@ export async function createP2PTransfer({
   fileSize
 }) {
   if (!senderId || !receiverId) {
-    throw new Error('Sender and receiver are required.');
-  }
-
-  if (!chatId) {
-    throw new Error('Chat ID is required.');
-  }
-
-  if (!fileName) {
-    throw new Error('File name is required.');
-  }
-
-  if (!canUseP2PFileTransfer(fileSize)) {
     throw new Error(
-      'File is too large for P2P transfer.'
+      'Sender and receiver are required.'
     );
   }
 
-  const transferRef = await addDoc(
-    collection(db, 'file_transfers'),
-    {
-      senderId,
-      receiverId,
-      chatId,
-      fileName,
-      mimeType: mimeType || 'application/octet-stream',
-      fileSize,
-      status: 'offering',
-      createdAt: serverTimestamp()
-    }
-  );
+  if (!chatId) {
+    throw new Error(
+      'Chat ID is required.'
+    );
+  }
 
-  const transferId = transferRef.id;
+  if (!fileName) {
+    throw new Error(
+      'File name is required.'
+    );
+  }
 
-  const peerConnection = createPeerConnection();
+  if (
+    !canUseP2PFileTransfer(
+      fileSize
+    )
+  ) {
+    throw new Error(
+      'File is too large for P2P.'
+    );
+  }
+
+  const transferRef =
+    await addDoc(
+      collection(
+        db,
+        'file_transfers'
+      ),
+      {
+        senderId,
+        receiverId,
+        chatId,
+        fileName,
+        mimeType:
+          mimeType ||
+          'application/octet-stream',
+        fileSize,
+        status: 'offering',
+        createdAt:
+          serverTimestamp()
+      }
+    );
+
+  const transferId =
+    transferRef.id;
+
+  const peerConnection =
+    createPeerConnection();
 
   const dataChannel =
     peerConnection.createDataChannel(
@@ -162,32 +220,35 @@ export async function createP2PTransfer({
       }
     );
 
-  let offerCandidatesStopped = false;
+  let stopped = false;
 
-  peerConnection.onicecandidate = async (event) => {
-    if (
-      !event.candidate ||
-      offerCandidatesStopped
-    ) {
-      return;
-    }
+  peerConnection.onicecandidate =
+    async (event) => {
+      if (
+        !event.candidate ||
+        stopped
+      ) {
+        return;
+      }
 
-    try {
-      await addDoc(
-        getOfferCandidatesRef(transferId),
-        event.candidate.toJSON()
-      );
-    } catch (error) {
-      console.log(
-        'P2P offer candidate error:',
-        error
-      );
-    }
-  };
+      try {
+        await addDoc(
+          getOfferCandidatesRef(
+            transferId
+          ),
+          event.candidate.toJSON()
+        );
+      } catch (error) {
+        console.log(
+          'Offer candidate error:',
+          error
+        );
+      }
+    };
 
   dataChannel.onopen = () => {
     console.log(
-      'P2P file DataChannel connected:',
+      'P2P DataChannel open:',
       transferId
     );
   };
@@ -206,7 +267,8 @@ export async function createP2PTransfer({
     );
   };
 
-  const offer = await peerConnection.createOffer();
+  const offer =
+    await peerConnection.createOffer();
 
   await peerConnection.setLocalDescription(
     offer
@@ -219,84 +281,104 @@ export async function createP2PTransfer({
         type: offer.type,
         sdp: offer.sdp
       },
-      status: 'waiting_for_answer'
+      status:
+        'waiting_for_answer'
     }
   );
 
-  const unsubscribeAnswer = onSnapshot(
-    transferRef,
-    async (snapshot) => {
-      const data = snapshot.data();
+  const unsubscribeAnswer =
+    onSnapshot(
+      transferRef,
+      async (snapshot) => {
+        const data =
+          snapshot.data();
 
-      if (!data || !data.answer) {
-        return;
-      }
+        if (
+          !data ||
+          !data.answer
+        ) {
+          return;
+        }
 
-      if (
-        peerConnection.currentRemoteDescription
-      ) {
-        return;
-      }
-
-      try {
-        const answer =
-          new RTCSessionDescription({
-            type: data.answer.type,
-            sdp: data.answer.sdp
-          });
-
-        await peerConnection.setRemoteDescription(
-          answer
-        );
-
-        await updateDoc(
-          transferRef,
-          {
-            status: 'connected'
-          }
-        );
-      } catch (error) {
-        console.log(
-          'P2P answer error:',
-          error
-        );
-      }
-    }
-  );
-
-  const unsubscribeCandidates = onSnapshot(
-    getAnswerCandidatesRef(transferId),
-    async (snapshot) => {
-      for (const change of snapshot.docChanges()) {
-        if (change.type !== 'added') {
-          continue;
+        if (
+          peerConnection.currentRemoteDescription
+        ) {
+          return;
         }
 
         try {
-          const candidate =
-            new RTCIceCandidate(
-              change.doc.data()
+          const answer =
+            new RTCSessionDescription(
+              {
+                type:
+                  data.answer.type,
+                sdp:
+                  data.answer.sdp
+              }
             );
 
-          await peerConnection.addIceCandidate(
-            candidate
+          await peerConnection.setRemoteDescription(
+            answer
+          );
+
+          await updateDoc(
+            transferRef,
+            {
+              status: 'connected'
+            }
           );
         } catch (error) {
           console.log(
-            'P2P answer candidate error:',
+            'Answer error:',
             error
           );
         }
       }
-    }
-  );
+    );
+
+  const unsubscribeCandidates =
+    onSnapshot(
+      getAnswerCandidatesRef(
+        transferId
+      ),
+      async (snapshot) => {
+        for (
+          const change of
+            snapshot.docChanges()
+        ) {
+          if (
+            change.type !==
+            'added'
+          ) {
+            continue;
+          }
+
+          try {
+            const candidate =
+              new RTCIceCandidate(
+                change.doc.data()
+              );
+
+            await peerConnection.addIceCandidate(
+              candidate
+            );
+          } catch (error) {
+            console.log(
+              'Answer candidate error:',
+              error
+            );
+          }
+        }
+      }
+    );
 
   return {
     transferId,
     peerConnection,
     dataChannel,
+
     cleanup: () => {
-      offerCandidatesStopped = true;
+      stopped = true;
 
       unsubscribeAnswer();
       unsubscribeCandidates();
@@ -321,96 +403,114 @@ export async function acceptP2PTransfer({
   receiverId
 }) {
   if (!transferId) {
-    throw new Error('Transfer ID is required.');
-  }
-
-  if (!receiverId) {
-    throw new Error('Receiver ID is required.');
-  }
-
-  const transferRef =
-    getTransferRef(transferId);
-
-  const snapshot =
-    await new Promise((resolve, reject) => {
-      const unsubscribe = onSnapshot(
-        transferRef,
-        (value) => {
-          unsubscribe();
-          resolve(value);
-        },
-        (error) => {
-          unsubscribe();
-          reject(error);
-        }
-      );
-    });
-
-  const transfer = snapshot.data();
-
-  if (!transfer) {
     throw new Error(
-      'File transfer was not found.'
+      'Transfer ID is required.'
     );
   }
 
-  if (transfer.receiverId !== receiverId) {
+  if (!receiverId) {
     throw new Error(
-      'This transfer is not assigned to this user.'
+      'Receiver ID is required.'
+    );
+  }
+
+  const transferRef =
+    getTransferRef(
+      transferId
+    );
+
+  const snapshot =
+    await new Promise(
+      (resolve, reject) => {
+        const unsubscribe =
+          onSnapshot(
+            transferRef,
+            (value) => {
+              unsubscribe();
+              resolve(value);
+            },
+            (error) => {
+              unsubscribe();
+              reject(error);
+            }
+          );
+      }
+    );
+
+  const transfer =
+    snapshot.data();
+
+  if (!transfer) {
+    throw new Error(
+      'File transfer not found.'
+    );
+  }
+
+  if (
+    transfer.receiverId !==
+    receiverId
+  ) {
+    throw new Error(
+      'Transfer is not assigned to this user.'
     );
   }
 
   if (!transfer.offer) {
     throw new Error(
-      'P2P offer is not available yet.'
+      'P2P offer is not available.'
     );
   }
 
   const peerConnection =
     createPeerConnection();
 
-  let answerCandidatesStopped = false;
+  let stopped = false;
 
-  peerConnection.onicecandidate = async (
-    event
-  ) => {
-    if (
-      !event.candidate ||
-      answerCandidatesStopped
-    ) {
-      return;
-    }
+  peerConnection.onicecandidate =
+    async (event) => {
+      if (
+        !event.candidate ||
+        stopped
+      ) {
+        return;
+      }
 
-    try {
-      await addDoc(
-        getAnswerCandidatesRef(transferId),
-        event.candidate.toJSON()
-      );
-    } catch (error) {
-      console.log(
-        'P2P answer candidate error:',
-        error
-      );
-    }
-  };
-
-  let incomingDataChannel = null;
+      try {
+        await addDoc(
+          getAnswerCandidatesRef(
+            transferId
+          ),
+          event.candidate.toJSON()
+        );
+      } catch (error) {
+        console.log(
+          'Answer candidate error:',
+          error
+        );
+      }
+    };
 
   const dataChannelPromise =
-    new Promise((resolve) => {
-      peerConnection.ondatachannel = (event) => {
-        incomingDataChannel =
-          event.channel;
-
-        resolve(event.channel);
-      };
-    });
+    new Promise(
+      (resolve) => {
+        peerConnection.ondatachannel =
+          (event) => {
+            resolve(
+              event.channel
+            );
+          };
+      }
+    );
 
   const offer =
-    new RTCSessionDescription({
-      type: transfer.offer.type,
-      sdp: transfer.offer.sdp
-    });
+    new RTCSessionDescription(
+      {
+        type:
+          transfer.offer.type,
+        sdp:
+          transfer.offer.sdp
+      }
+    );
 
   await peerConnection.setRemoteDescription(
     offer
@@ -434,32 +534,41 @@ export async function acceptP2PTransfer({
     }
   );
 
-  const unsubscribeCandidates = onSnapshot(
-    getOfferCandidatesRef(transferId),
-    async (snapshot) => {
-      for (const change of snapshot.docChanges()) {
-        if (change.type !== 'added') {
-          continue;
-        }
+  const unsubscribeCandidates =
+    onSnapshot(
+      getOfferCandidatesRef(
+        transferId
+      ),
+      async (snapshot) => {
+        for (
+          const change of
+            snapshot.docChanges()
+        ) {
+          if (
+            change.type !==
+            'added'
+          ) {
+            continue;
+          }
 
-        try {
-          const candidate =
-            new RTCIceCandidate(
-              change.doc.data()
+          try {
+            const candidate =
+              new RTCIceCandidate(
+                change.doc.data()
+              );
+
+            await peerConnection.addIceCandidate(
+              candidate
             );
-
-          await peerConnection.addIceCandidate(
-            candidate
-          );
-        } catch (error) {
-          console.log(
-            'P2P offer candidate error:',
-            error
-          );
+          } catch (error) {
+            console.log(
+              'Offer candidate error:',
+              error
+            );
+          }
         }
       }
-    }
-  );
+    );
 
   const dataChannel =
     await dataChannelPromise;
@@ -468,8 +577,9 @@ export async function acceptP2PTransfer({
     transferId,
     peerConnection,
     dataChannel,
+
     cleanup: () => {
-      answerCandidatesStopped = true;
+      stopped = true;
 
       unsubscribeCandidates();
 
@@ -503,12 +613,18 @@ export async function sendFileOverDataChannel({
   }
 
   if (!fileUri) {
-    throw new Error('File URI is required.');
+    throw new Error(
+      'File URI is required.'
+    );
   }
 
-  if (!canUseP2PFileTransfer(fileSize)) {
+  if (
+    !canUseP2PFileTransfer(
+      fileSize
+    )
+  ) {
     throw new Error(
-      'File is too large for P2P transfer.'
+      'File is too large for P2P.'
     );
   }
 
@@ -521,47 +637,54 @@ export async function sendFileOverDataChannel({
       }
     );
 
-  const totalBytes = base64ToBytes(base64);
-  const totalSize = totalBytes.length;
+  const bytes =
+    base64ToBytes(base64);
 
-  const header = JSON.stringify({
-    type: 'file-start',
-    fileName,
-    mimeType:
-      mimeType || 'application/octet-stream',
-    fileSize: fileSize || totalSize
-  });
+  const totalSize =
+    bytes.length;
 
-  dataChannel.send(header);
+  dataChannel.send(
+    JSON.stringify({
+      type: 'file-start',
+      fileName,
+      mimeType:
+        mimeType ||
+        'application/octet-stream',
+      fileSize:
+        fileSize || totalSize
+    })
+  );
 
   let offset = 0;
 
-  while (offset < totalSize) {
+  while (
+    offset < totalSize
+  ) {
     const end = Math.min(
       offset + CHUNK_SIZE,
       totalSize
     );
 
     const chunk =
-      totalBytes.slice(offset, end);
+      bytes.slice(
+        offset,
+        end
+      );
 
     let binary = '';
 
-    for (let i = 0; i < chunk.length; i++) {
+    for (
+      let i = 0;
+      i < chunk.length;
+      i++
+    ) {
       binary += String.fromCharCode(
         chunk[i]
       );
     }
 
-    let encoded = '';
-
-    if (typeof btoa === 'function') {
-      encoded = btoa(binary);
-    } else {
-      throw new Error(
-        'Base64 encoder is not available.'
-      );
-    }
+    const encoded =
+      btoa(binary);
 
     dataChannel.send(
       JSON.stringify({
@@ -575,15 +698,24 @@ export async function sendFileOverDataChannel({
     if (onProgress) {
       onProgress(
         Math.min(
-          offset / totalSize,
+          offset /
+            Math.max(
+              totalSize,
+              1
+            ),
           1
         )
       );
     }
 
-    await new Promise((resolve) => {
-      setTimeout(resolve, 0);
-    });
+    await new Promise(
+      (resolve) => {
+        setTimeout(
+          resolve,
+          0
+        );
+      }
+    );
   }
 
   dataChannel.send(
@@ -595,8 +727,10 @@ export async function sendFileOverDataChannel({
   return {
     fileName,
     mimeType:
-      mimeType || 'application/octet-stream',
-    fileSize: fileSize || totalSize
+      mimeType ||
+      'application/octet-stream',
+    fileSize:
+      fileSize || totalSize
   };
 }
 
@@ -618,96 +752,108 @@ export function attachFileReceiver({
   let fileInfo = null;
   let receivedBytes = 0;
 
-  const handleMessage = (event) => {
-    try {
-      const packet =
-        typeof event.data === 'string'
-          ? JSON.parse(event.data)
-          : null;
-
-      if (!packet) {
-        return;
-      }
-
-      if (packet.type === 'file-start') {
-        fileInfo = {
-          fileName: packet.fileName,
-          mimeType: packet.mimeType,
-          fileSize: packet.fileSize
-        };
-
-        receivedBytes = 0;
-        chunks.length = 0;
-
-        if (onStart) {
-          onStart(fileInfo);
+  const handleMessage =
+    (event) => {
+      try {
+        if (
+          typeof event.data !==
+          'string'
+        ) {
+          return;
         }
 
-        return;
-      }
-
-      if (packet.type === 'file-chunk') {
-        if (!fileInfo) {
-          throw new Error(
-            'Received file chunk before file start.'
+        const packet =
+          JSON.parse(
+            event.data
           );
+
+        if (
+          packet.type ===
+          'file-start'
+        ) {
+          fileInfo = {
+            fileName:
+              packet.fileName,
+            mimeType:
+              packet.mimeType,
+            fileSize:
+              packet.fileSize
+          };
+
+          chunks.length = 0;
+          receivedBytes = 0;
+
+          if (onStart) {
+            onStart(fileInfo);
+          }
+
+          return;
         }
 
-        chunks.push(packet.data);
+        if (
+          packet.type ===
+          'file-chunk'
+        ) {
+          if (!fileInfo) {
+            throw new Error(
+              'File start not received.'
+            );
+          }
 
-        const chunkBytes =
-          base64ToBytes(packet.data).length;
-
-        receivedBytes += chunkBytes;
-
-        if (onProgress) {
-          onProgress(
-            Math.min(
-              receivedBytes /
-                Math.max(
-                  fileInfo.fileSize,
-                  1
-                ),
-              1
-            )
+          chunks.push(
+            packet.data
           );
+
+          receivedBytes +=
+            base64ToBytes(
+              packet.data
+            ).length;
+
+          if (onProgress) {
+            onProgress(
+              Math.min(
+                receivedBytes /
+                  Math.max(
+                    fileInfo.fileSize,
+                    1
+                  ),
+                1
+              )
+            );
+          }
+
+          return;
         }
 
-        return;
-      }
+        if (
+          packet.type ===
+          'file-end'
+        ) {
+          if (!fileInfo) {
+            throw new Error(
+              'File information missing.'
+            );
+          }
 
-      if (packet.type === 'file-end') {
-        if (!fileInfo) {
-          throw new Error(
-            'Received file end without file.'
-          );
+          if (onComplete) {
+            onComplete({
+              ...fileInfo,
+              base64:
+                chunks.join('')
+            });
+          }
         }
+      } catch (error) {
+        console.log(
+          'P2P receiver error:',
+          error
+        );
 
-        const combinedBase64 =
-          chunks.join('');
-
-        const result = {
-          ...fileInfo,
-          base64: combinedBase64
-        };
-
-        if (onComplete) {
-          onComplete(result);
+        if (onError) {
+          onError(error);
         }
-
-        return;
       }
-    } catch (error) {
-      console.log(
-        'P2P receiver error:',
-        error
-      );
-
-      if (onError) {
-        onError(error);
-      }
-    }
-  };
+    };
 
   dataChannel.addEventListener(
     'message',
@@ -732,13 +878,18 @@ export async function saveReceivedFile({
 }) {
   if (!base64) {
     throw new Error(
-      'Received file data is empty.'
+      'Received file is empty.'
     );
   }
 
   const safeName =
-    String(fileName || 'received-file')
-      .replace(/[^a-zA-Z0-9._-]/g, '_');
+    String(
+      fileName ||
+        'received-file'
+    ).replace(
+      /[^a-zA-Z0-9._-]/g,
+      '_'
+    );
 
   const directory =
     FileSystem.cacheDirectory ||
@@ -746,7 +897,7 @@ export async function saveReceivedFile({
 
   if (!directory) {
     throw new Error(
-      'No writable file directory is available.'
+      'Writable file directory unavailable.'
     );
   }
 
@@ -775,17 +926,21 @@ export async function markP2PTransferFailed(
 
   try {
     await updateDoc(
-      getTransferRef(transferId),
+      getTransferRef(
+        transferId
+      ),
       {
         status: 'failed',
         failureReason:
-          reason || 'P2P transfer failed',
-        failedAt: serverTimestamp()
+          reason ||
+          'P2P transfer failed',
+        failedAt:
+          serverTimestamp()
       }
     );
   } catch (error) {
     console.log(
-      'Failed to update P2P status:',
+      'P2P failure update error:',
       error
     );
   }
@@ -800,15 +955,18 @@ export async function markP2PTransferCompleted(
 
   try {
     await updateDoc(
-      getTransferRef(transferId),
+      getTransferRef(
+        transferId
+      ),
       {
         status: 'completed',
-        completedAt: serverTimestamp()
+        completedAt:
+          serverTimestamp()
       }
     );
   } catch (error) {
     console.log(
-      'Failed to update P2P completion:',
+      'P2P completion update error:',
       error
     );
   }
