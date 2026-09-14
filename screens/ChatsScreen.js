@@ -33,10 +33,7 @@ import {
   query,
   where,
   getDocs,
-  doc,
-  setDoc,
   onSnapshot,
-  serverTimestamp,
 } from 'firebase/firestore';
 
 
@@ -102,7 +99,7 @@ export default function ChatsScreen({
 
 
   /* =========================
-     FIREBASE REALTIME CHATS
+     REALTIME USER CHATS
   ========================= */
 
   useEffect(() => {
@@ -114,66 +111,66 @@ export default function ChatsScreen({
 
     setLoading(true);
 
-    const chatsRef =
-      collection(db, 'chats');
+    const chatsRef = collection(
+      db,
+      'users',
+      currentUser.uid,
+      'user_chats'
+    );
 
     const chatsQuery = query(
       chatsRef,
       where(
-        'participants',
-        'array-contains',
-        currentUser.uid
+        'type',
+        '==',
+        'private'
       )
     );
 
-    const unsubscribe =
-      onSnapshot(
-        chatsQuery,
-        (snapshot) => {
-          const chats = [];
+    const unsubscribe = onSnapshot(
+      chatsQuery,
+      (snapshot) => {
+        const chats = [];
 
-          snapshot.forEach((item) => {
-            const data = item.data();
-
-            chats.push({
-              id: item.id,
-              ...data,
-            });
+        snapshot.forEach((item) => {
+          chats.push({
+            id: item.id,
+            ...item.data(),
           });
+        });
 
-          chats.sort(
-            (a, b) => {
-              const aTime =
-                getTime(
-                  a.lastMessageTime
-                );
+        chats.sort(
+          (a, b) => {
+            return (
+              getTime(
+                b.lastMessageTime ||
+                b.updatedAt
+              ) -
+              getTime(
+                a.lastMessageTime ||
+                a.updatedAt
+              )
+            );
+          }
+        );
 
-              const bTime =
-                getTime(
-                  b.lastMessageTime
-                );
+        setPrivateChats(chats);
+        setLoading(false);
+      },
+      (error) => {
+        console.log(
+          'User chats error:',
+          error
+        );
 
-              return bTime - aTime;
-            }
-          );
+        setLoading(false);
 
-          setPrivateChats(chats);
-          setLoading(false);
-        },
-        (error) => {
-          console.log(
-            'Chats listener error:',
-            error
-          );
-
-          setLoading(false);
-
-          Alert.alert(
-            'Chat Error',
-            'Chat list load nahi ho paayi.'
-          );
-        }
-      );
+        Alert.alert(
+          'Chat Error',
+          'Chat list load nahi ho paayi.'
+        );
+      }
+    );
 
     return () => {
       unsubscribe();
@@ -182,7 +179,7 @@ export default function ChatsScreen({
 
 
   /* =========================
-     USER SEARCH
+     SEARCH USER
   ========================= */
 
   const handleSearch = async () => {
@@ -196,7 +193,6 @@ export default function ChatsScreen({
         'Username required',
         'Pehle @username enter karo.'
       );
-
       return;
     }
 
@@ -210,7 +206,6 @@ export default function ChatsScreen({
         'Login required',
         'Pehle login karo.'
       );
-
       return;
     }
 
@@ -255,7 +250,8 @@ export default function ChatsScreen({
         data.uid || userDoc.id;
 
       if (
-        friendId === currentUser.uid
+        friendId ===
+        currentUser.uid
       ) {
         Alert.alert(
           'Oops!',
@@ -266,7 +262,7 @@ export default function ChatsScreen({
         return;
       }
 
-      const friend = {
+      setSearchResult({
         uid: friendId,
 
         username:
@@ -283,13 +279,11 @@ export default function ChatsScreen({
           data.avatar ||
           data.photoURL ||
           '',
-      };
-
-      setSearchResult(friend);
+      });
 
     } catch (error) {
       console.log(
-        'User search error:',
+        'Search error:',
         error
       );
 
@@ -304,120 +298,22 @@ export default function ChatsScreen({
 
 
   /* =========================
-     CHAT ID
+     OPEN SEARCH RESULT
   ========================= */
 
-  const getChatId = (
-    friendId
+  const openNewChat = (
+    friend
   ) => {
     const myId =
       currentUser.uid;
 
-    if (myId < friendId) {
-      return `${myId}_${friendId}`;
-    }
-
-    return `${friendId}_${myId}`;
-  };
-
-
-  /* =========================
-     CREATE / SAVE CHAT
-  ========================= */
-
-  const createChat = async (
-    friend
-  ) => {
-    if (!currentUser?.uid) {
-      return null;
-    }
+    const friendId =
+      friend.uid;
 
     const chatId =
-      getChatId(friend.uid);
-
-    const chatRef =
-      doc(db, 'chats', chatId);
-
-    try {
-      await setDoc(
-        chatRef,
-        {
-          chatId,
-
-          participants: [
-            currentUser.uid,
-            friend.uid,
-          ],
-
-          participantIds: [
-            currentUser.uid,
-            friend.uid,
-          ],
-
-          users: {
-            [currentUser.uid]: {
-              name:
-                currentUser.displayName ||
-                'Nax User',
-
-              uid:
-                currentUser.uid,
-            },
-
-            [friend.uid]: {
-              name:
-                friend.name,
-
-              username:
-                friend.username,
-
-              avatar:
-                friend.avatar,
-
-              uid:
-                friend.uid,
-            },
-          },
-
-          updatedAt:
-            serverTimestamp(),
-        },
-        {
-          merge: true,
-        }
-      );
-
-      return chatId;
-
-    } catch (error) {
-      console.log(
-        'Create chat error:',
-        error
-      );
-
-      Alert.alert(
-        'Chat Error',
-        'Chat create nahi ho paayi.'
-      );
-
-      return null;
-    }
-  };
-
-
-  /* =========================
-     OPEN NEW CHAT
-  ========================= */
-
-  const openNewChat = async (
-    friend
-  ) => {
-    const chatId =
-      await createChat(friend);
-
-    if (!chatId) {
-      return;
-    }
+      myId < friendId
+        ? `${myId}_${friendId}`
+        : `${friendId}_${myId}`;
 
     setSearchResult(null);
     setSearchQuery('');
@@ -431,11 +327,13 @@ export default function ChatsScreen({
         chatName:
           friend.name,
 
-        friendId:
-          friend.uid,
+        friendId,
 
         friendUsername:
           friend.username,
+
+        friendAvatar:
+          friend.avatar,
       }
     );
   };
@@ -448,111 +346,41 @@ export default function ChatsScreen({
   const openChat = (
     item
   ) => {
-    const myId =
-      currentUser?.uid;
-
-    const participants =
-      item.participants || [];
-
-    let friendId =
-      item.friendId || '';
-
-    if (!friendId) {
-      friendId =
-        participants.find(
-          (id) => id !== myId
-        ) || '';
-    }
-
-    let friendName =
-      item.friendName ||
-      item.name ||
-      'Nax User';
-
-    let friendUsername =
-      item.friendUsername ||
-      item.username ||
+    const friendId =
+      item.friendId ||
+      item.otherUserId ||
+      item.userId ||
       '';
 
-    let friendAvatar =
-      item.friendAvatar ||
-      item.avatar ||
-      '';
-
-    if (
-      item.users &&
-      friendId &&
-      item.users[friendId]
-    ) {
-      const friend =
-        item.users[friendId];
-
-      friendName =
-        friend.name ||
-        friendName;
-
-      friendUsername =
-        friend.username ||
-        friendUsername;
-
-      friendAvatar =
-        friend.avatar ||
-        friendAvatar;
-    }
+    const chatId =
+      item.chatId ||
+      item.id;
 
     navigation.navigate(
       'ChatRoom',
       {
-        chatId:
-          item.chatId ||
-          item.id,
+        chatId,
 
         chatName:
-          friendName,
+          item.friendName ||
+          item.name ||
+          item.displayName ||
+          item.username ||
+          'Nax User',
 
         friendId,
 
-        friendUsername,
+        friendUsername:
+          item.friendUsername ||
+          item.username ||
+          '',
 
-        friendAvatar,
+        friendAvatar:
+          item.friendAvatar ||
+          item.avatar ||
+          '',
       }
     );
-  };
-
-
-  /* =========================
-     AVATAR
-  ========================= */
-
-  const getAvatar = (
-    item
-  ) => {
-    if (item.avatar) {
-      return {
-        uri: item.avatar,
-      };
-    }
-
-    if (item.friendAvatar) {
-      return {
-        uri: item.friendAvatar,
-      };
-    }
-
-    const name =
-      encodeURIComponent(
-        item.friendName ||
-        item.name ||
-        'Nax User'
-      );
-
-    return {
-      uri:
-        'https://ui-avatars.com/api/' +
-        `?name=${name}` +
-        '&background=1687FF' +
-        '&color=ffffff',
-    };
   };
 
 
@@ -563,79 +391,14 @@ export default function ChatsScreen({
   const getChatName = (
     item
   ) => {
-    if (item.friendName) {
-      return item.friendName;
-    }
-
-    if (item.name) {
-      return item.name;
-    }
-
-    const myId =
-      currentUser?.uid;
-
-    const participants =
-      item.participants || [];
-
-    const friendId =
-      participants.find(
-        (id) => id !== myId
-      );
-
-    if (
-      item.users &&
-      friendId &&
-      item.users[friendId]
-    ) {
-      return (
-        item.users[friendId].name ||
-        item.users[friendId].username ||
-        'Nax User'
-      );
-    }
-
-    return 'Nax User';
-  };
-
-
-  /* =========================
-     CHAT USERNAME
-  ========================= */
-
-  const getUsername = (
-    item
-  ) => {
-    if (item.friendUsername) {
-      return item.friendUsername;
-    }
-
-    if (item.username) {
-      return item.username;
-    }
-
-    const myId =
-      currentUser?.uid;
-
-    const participants =
-      item.participants || [];
-
-    const friendId =
-      participants.find(
-        (id) => id !== myId
-      );
-
-    if (
-      item.users &&
-      friendId &&
-      item.users[friendId]
-    ) {
-      return (
-        item.users[friendId]
-          .username || ''
-      );
-    }
-
-    return '';
+    return (
+      item.friendName ||
+      item.name ||
+      item.displayName ||
+      item.friendUsername ||
+      item.username ||
+      'Nax User'
+    );
   };
 
 
@@ -648,16 +411,12 @@ export default function ChatsScreen({
   ) => {
     if (
       item.lastMessage !==
-      undefined &&
-      item.lastMessage !== null
+      undefined
     ) {
-      if (
-        item.lastMessage === ''
-      ) {
-        return 'No messages yet';
-      }
-
-      return item.lastMessage;
+      return (
+        item.lastMessage ||
+        'No messages yet'
+      );
     }
 
     if (item.message) {
@@ -669,7 +428,8 @@ export default function ChatsScreen({
     }
 
     const username =
-      getUsername(item);
+      item.friendUsername ||
+      item.username;
 
     if (username) {
       return `@${username}`;
@@ -680,7 +440,7 @@ export default function ChatsScreen({
 
 
   /* =========================
-     UNREAD COUNT
+     UNREAD
   ========================= */
 
   const getUnread = (
@@ -712,12 +472,52 @@ export default function ChatsScreen({
 
     if (
       typeof item.unread ===
-        'number'
+      'number'
     ) {
       return item.unread;
     }
 
+    if (
+      typeof item.unreadCount ===
+      'number'
+    ) {
+      return item.unreadCount;
+    }
+
     return 0;
+  };
+
+
+  /* =========================
+     AVATAR
+  ========================= */
+
+  const getAvatar = (
+    item
+  ) => {
+    const avatar =
+      item.friendAvatar ||
+      item.avatar ||
+      item.photoURL;
+
+    if (avatar) {
+      return {
+        uri: avatar,
+      };
+    }
+
+    const name =
+      encodeURIComponent(
+        getChatName(item)
+      );
+
+    return {
+      uri:
+        'https://ui-avatars.com/api/' +
+        `?name=${name}` +
+        '&background=1687FF' +
+        '&color=ffffff',
+    };
   };
 
 
@@ -745,6 +545,7 @@ export default function ChatsScreen({
           {
             backgroundColor:
               cardBg,
+
             borderColor:
               border,
           },
@@ -754,11 +555,7 @@ export default function ChatsScreen({
         }
       >
         <Image
-          source={getAvatar({
-            ...item,
-            friendName:
-              chatName,
-          })}
+          source={getAvatar(item)}
           style={styles.avatar}
         />
 
@@ -857,6 +654,7 @@ export default function ChatsScreen({
           {
             backgroundColor:
               cardBg,
+
             borderColor:
               border,
           },
@@ -901,7 +699,7 @@ export default function ChatsScreen({
         >
           <Image
             source={getAvatar({
-              friendName:
+              name:
                 searchResult.name,
 
               avatar:
@@ -985,7 +783,7 @@ export default function ChatsScreen({
 
 
   /* =========================
-     NEW PRIVATE CHAT
+     NEW CHAT MENU
   ========================= */
 
   const startNewChat = () => {
@@ -996,7 +794,7 @@ export default function ChatsScreen({
         'New Private Chat',
         'Upar @username search karo.'
       );
-    }, 200);
+    }, 150);
   };
 
 
@@ -1257,7 +1055,7 @@ export default function ChatsScreen({
       )}
 
 
-      {/* GLOBAL ROOM */}
+      {/* GLOBAL */}
 
       <TouchableOpacity
         activeOpacity={0.85}
@@ -1334,7 +1132,7 @@ export default function ChatsScreen({
             </Text>
 
 
-            {/* PRIVATE CHAT */}
+            {/* PRIVATE */}
 
             <TouchableOpacity
               activeOpacity={0.8}
@@ -1536,7 +1334,7 @@ function getTime(value) {
 
 
 /* =========================
-   DATE FORMAT
+   DATE
 ========================= */
 
 function formatDate(value) {
@@ -1553,11 +1351,10 @@ function formatDate(value) {
   const now =
     new Date();
 
-  const sameDay =
+  if (
     date.toDateString() ===
-    now.toDateString();
-
-  if (sameDay) {
+    now.toDateString()
+  ) {
     return date.toLocaleTimeString(
       [],
       {
@@ -1856,13 +1653,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     elevation: 7,
-    shadowColor: '#000000',
-    shadowOffset: {
-      width: 0,
-      height: 3,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 5,
   },
 
   modalOverlay: {
