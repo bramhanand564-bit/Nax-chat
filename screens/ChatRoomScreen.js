@@ -16,7 +16,10 @@ import * as FileSystem from 'expo-file-system';
 import * as MediaLibrary from 'expo-media-library';
 
 import { db, auth } from '../firebaseConfig';
-import { collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, doc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { 
+  collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, 
+  doc, updateDoc, deleteDoc, setDoc, increment 
+} from 'firebase/firestore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width } = Dimensions.get('window');
@@ -26,6 +29,7 @@ export default function ChatRoomScreen({ route, navigation }) {
 
   const chatId = route.params?.chatId || 'global_chats';
   const chatTitle = route.params?.chatName || 'Global Nax Room';
+  const friendId = route.params?.friendId || null; // <--- ADDED FROM BUG #10 FIX
 
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
@@ -36,10 +40,8 @@ export default function ChatRoomScreen({ route, navigation }) {
   const [fullScreenMedia, setFullScreenMedia] = useState(null); 
   const [myUniqueId, setMyUniqueId] = useState(''); 
   
-  // Call States
+  // Call & Upload States
   const [isCallingOut, setIsCallingOut] = useState(false);
-  
-  // Upload States
   const [isUploading, setIsUploading] = useState(false);
   const [uploadText, setUploadText] = useState('');
 
@@ -73,15 +75,59 @@ export default function ChatRoomScreen({ route, navigation }) {
     try { return (typeof createdAt.toDate === 'function') ? createdAt.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : new Date(createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); } catch (e) { return '...'; }
   };
 
+  // ================= BUG #12 FIX: CHAT METADATA UPDATER =================
+  const updateChatMetadata = async (lastMsg) => {
+    if (chatId === 'global_chats' || !friendId || !currentUser) return;
+
+    try {
+      const myChatRef = doc(db, `users/${currentUser.uid}/user_chats`, chatId);
+      const friendChatRef = doc(db, `users/${friendId}/user_chats`, chatId);
+      const time = serverTimestamp();
+
+      // Update My Chat List
+      await setDoc(myChatRef, {
+        chatId: chatId,
+        friendId: friendId,
+        friendName: chatTitle,
+        lastMessage: lastMsg,
+        lastMessageTime: time,
+        updatedAt: time
+      }, { merge: true });
+
+      // Update Friend's Chat List (increase unread count)
+      await setDoc(friendChatRef, {
+        chatId: chatId,
+        friendId: currentUser.uid,
+        friendName: currentUser.displayName || 'User',
+        lastMessage: lastMsg,
+        lastMessageTime: time,
+        unreadCount: increment(1),
+        updatedAt: time
+      }, { merge: true });
+
+    } catch (error) {
+      console.log("Metadata Error:", error);
+    }
+  };
+
   // ================= 1. TEXT MESSAGE =================
   const sendMessage = async () => {
     if (!inputText.trim()) return;
-    const collectionPath = chatId === 'global_chats' ? 'global_chats' : `chats/${chatId}/messages`;
-    await addDoc(collection(db, collectionPath), {
-      text: inputText.trim(), senderName: currentUser?.displayName || 'User', senderUniqueId: myUniqueId || '@user', senderId: currentUser?.uid || null,
-      type: 'text', createdAt: serverTimestamp()
-    });
-    setInputText('');
+    const msgText = inputText.trim();
+    setInputText(''); // Clear input instantly for better UX
+
+    try {
+      const collectionPath = chatId === 'global_chats' ? 'global_chats' : `chats/${chatId}/messages`;
+      await addDoc(collection(db, collectionPath), {
+        text: msgText, senderName: currentUser?.displayName || 'User', senderUniqueId: myUniqueId || '@user', senderId: currentUser?.uid || null,
+        type: 'text', createdAt: serverTimestamp()
+      });
+      
+      // Update Chat List Metadata
+      await updateChatMetadata(msgText);
+    } catch (e) {
+      Alert.alert("Error", "Could not send message.");
+    }
   };
 
   // ================= 2. CLOUD UPLOAD ENGINE =================
@@ -97,7 +143,6 @@ export default function ChatRoomScreen({ route, navigation }) {
         type: file.mimeType || 'application/octet-stream'
       });
 
-      // Free Temp Cloud for sending (Direct Link)
       const response = await fetch('https://tmpfiles.org/api/v1/upload', {
         method: 'POST', body: formData, headers: { 'Content-Type': 'multipart/form-data' }
       });
@@ -115,9 +160,14 @@ export default function ChatRoomScreen({ route, navigation }) {
           senderUniqueId: myUniqueId || '@user', 
           senderId: currentUser?.uid || null,
           type: file.type === 'video' ? 'video' : 'image', 
-          isDownloaded: false, // Samne wale ke liye pehle download false rahega
+          isDownloaded: false, 
           createdAt: serverTimestamp()
         });
+        
+        // Update Metadata for Media
+        const mediaMsg = file.type === 'video' ? '🎥 Video' : '📷 Image';
+        await updateChatMetadata(mediaMsg);
+        
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       } else {
         Alert.alert("Upload Failed", "Cloud server rejected the file.");
@@ -128,7 +178,7 @@ export default function ChatRoomScreen({ route, navigation }) {
     setIsUploading(false);
   };
 
-  // ================= 3. LOCAL DOWNLOAD ENGINE (NEW) =================
+  // ================= 3. LOCAL DOWNLOAD ENGINE =================
   const downloadToLocal = async (cloudUrl, fileName, msgId) => {
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -142,10 +192,8 @@ export default function ChatRoomScreen({ route, navigation }) {
       const fileUri = FileSystem.documentDirectory + (fileName || `download_${Date.now()}.mp4`);
       const downloadRes = await FileSystem.downloadAsync(cloudUrl, fileUri);
 
-      // Save to Gallery
       const asset = await MediaLibrary.createAssetAsync(downloadRes.uri);
       
-      // Update Firebase so it plays locally next time
       const collectionPath = chatId === 'global_chats' ? 'global_chats' : `chats/${chatId}/messages`;
       await updateDoc(doc(db, collectionPath, msgId), {
         localUri: asset.uri,
@@ -187,8 +235,6 @@ export default function ChatRoomScreen({ route, navigation }) {
     const isMe = msg.senderId === currentUser?.uid;
     const time = getMessageTime(msg.createdAt);
     const mType = msg.type || 'text';
-    
-    // Auto-assume my own sent files are local
     const playUri = msg.isDownloaded || isMe ? (msg.localUri || msg.mediaUrl) : msg.mediaUrl;
 
     return (
@@ -205,16 +251,14 @@ export default function ChatRoomScreen({ route, navigation }) {
           {mType === 'image' || mType === 'video' ? (
             <View style={styles.videoContainer}>
               {(!msg.isDownloaded && !isMe) ? (
-                // 🛑 BLURRED + DOWNLOAD BUTTON (Kala dabba hatane ke liye)
                 <TouchableOpacity onPress={() => downloadToLocal(msg.mediaUrl, msg.fileName, msg.id)}>
-                  <Image source={{ uri: msg.mediaUrl || 'https://via.placeholder.com/300' }} style={[styles.chatMedia, { opacity: 0.4, blurRadius: 10 }]} />
+                  <Image source={{ uri: msg.mediaUrl || 'https://via.placeholder.com/300' }} style={[styles.chatMedia, { opacity: 0.4 }]} blurRadius={10} />
                   <View style={styles.downloadOverlay}>
                     <Ionicons name="download" size={36} color="#FFF" />
                     <Text style={{ color: '#FFF', marginTop: 5, fontWeight: 'bold' }}>{msg.fileSize || 'Download'}</Text>
                   </View>
                 </TouchableOpacity>
               ) : (
-                // ✅ LOCAL PLAY (Gallery se seedha chalega)
                 <TouchableOpacity onPress={() => setFullScreenMedia({ uri: playUri, type: mType })}>
                   {mType === 'video' ? (
                     <>
@@ -257,7 +301,6 @@ export default function ChatRoomScreen({ route, navigation }) {
         </View>
       </View>
 
-      {/* CLOUD UPLOAD INDICATOR */}
       {isUploading && (
         <View style={[styles.uploadBanner, { backgroundColor: glassPanelBg, borderColor: glassBorder }]}>
           <ActivityIndicator size="small" color="#007AFF" />
@@ -271,21 +314,15 @@ export default function ChatRoomScreen({ route, navigation }) {
         {messages.map(renderMessage)}
       </ScrollView>
 
-      {/* ATTACHMENTS */}
       {showAttachments && (
         <View style={[styles.attachmentTray, { backgroundColor: glassPanelBg, borderTopColor: glassBorder }]}>
           <TouchableOpacity style={styles.attachOption} onPress={handleMediaSelection}>
             <View style={[styles.attachIconBg, { backgroundColor: '#3B82F6' }]}><Ionicons name="images" size={24} color="#FFF" /></View>
             <Text style={{ color: textMain, fontSize: 12, marginTop: 6, fontWeight: '500' }}>Gallery/Files</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.attachOption} onPress={() => { setShowAttachments(false); navigation.navigate('TicTacToe'); }}>
-            <View style={[styles.attachIconBg, { backgroundColor: '#10B981' }]}><Ionicons name="game-controller" size={24} color="#FFF" /></View>
-            <Text style={{ color: textMain, fontSize: 12, marginTop: 6, fontWeight: '500' }}>Games</Text>
-          </TouchableOpacity>
         </View>
       )}
 
-      {/* INPUT BAR */}
       <View style={[styles.inputArea, { backgroundColor: bg }]}>
         <View style={[styles.inputBox, { backgroundColor: glassPanelBg, borderColor: glassBorder }]}>
           <TouchableOpacity onPress={() => setShowAttachments(!showAttachments)} style={styles.iconBtn}><Ionicons name="add-circle" size={30} color={textSub} /></TouchableOpacity>
@@ -296,31 +333,12 @@ export default function ChatRoomScreen({ route, navigation }) {
         </TouchableOpacity>
       </View>
 
-      {/* MODALS */}
-      <Modal visible={isCallingOut} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={[styles.actionModal, { backgroundColor: glassPanelBg, borderColor: glassBorder, alignItems: 'center' }]}>
-            <ActivityIndicator size="large" color="#007AFF" style={{ marginBottom: 10 }} />
-            <Text style={{ color: textMain, fontSize: 18, fontWeight: 'bold' }}>Ringing...</Text>
-          </View>
-        </View>
-      </Modal>
-
+      {/* FULL SCREEN MODAL */}
       <Modal visible={!!fullScreenMedia} transparent={false} animationType="fade" onRequestClose={() => setFullScreenMedia(null)}>
         <View style={styles.fullScreenContainer}>
           <TouchableOpacity style={styles.fullScreenCloseBtn} onPress={() => setFullScreenMedia(null)}><Ionicons name="close" size={32} color="#FFF" /></TouchableOpacity>
           {fullScreenMedia?.type === 'video' ? ( <Video source={{ uri: fullScreenMedia.uri }} style={{ width: '100%', height: '100%' }} resizeMode="contain" useNativeControls shouldPlay /> ) : ( <Image source={{ uri: fullScreenMedia?.uri }} style={{ width: '100%', height: '100%', resizeMode: 'contain' }} /> )}
         </View>
-      </Modal>
-
-      <Modal visible={!!selectedMessage} transparent animationType="fade" onRequestClose={() => setSelectedMessage(null)}>
-        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setSelectedMessage(null)}>
-          <View style={[styles.actionModal, { backgroundColor: glassPanelBg, borderColor: glassBorder }]}>
-            <TouchableOpacity style={{ padding: 15, alignItems: 'center' }} onPress={async () => { if(selectedMessage?.senderId === currentUser?.uid) await deleteDoc(doc(db, chatId === 'global_chats' ? 'global_chats' : `chats/${chatId}/messages`, selectedMessage.id)); setSelectedMessage(null); }}>
-              <Text style={{ color: '#EF4444', fontWeight: 'bold', fontSize: 16 }}>Delete Message</Text>
-            </TouchableOpacity>
-          </View>
-        </TouchableOpacity>
       </Modal>
 
     </SafeAreaView>
@@ -336,38 +354,28 @@ const styles = StyleSheet.create({
   headerName: { fontSize: 18, fontWeight: '700' }, 
   headerActions: { flexDirection: 'row', alignItems: 'center' }, 
   actionIcon: { padding: 8, marginLeft: 2 }, 
-  
   uploadBanner: { flexDirection: 'row', alignItems: 'center', padding: 12, margin: 10, borderRadius: 12, borderWidth: 1, elevation: 3 },
   chatArea: { flex: 1 }, 
   encryptionBox: { flexDirection: 'row', paddingVertical: 8, paddingHorizontal: 12, borderRadius: 20, alignSelf: 'center', marginBottom: 20, borderWidth: 1 }, 
   encryptionText: { fontSize: 11, marginLeft: 6 }, 
-  
   messageRow: { flexDirection: 'row', marginBottom: 15 }, 
   messageBubble: { maxWidth: '82%', borderRadius: 20, borderWidth: 1, overflow: 'hidden' }, 
   senderName: { fontSize: 13, fontWeight: '700', marginBottom: 4 }, 
-  
   chatMedia: { width: width * 0.65, height: width * 0.65, borderRadius: 16, resizeMode: 'cover', backgroundColor: '#1E2D3D' },
   videoContainer: { position: 'relative', justifyContent: 'center', alignItems: 'center' },
   playOverlay: { position: 'absolute', width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
   downloadOverlay: { position: 'absolute', width: 80, height: 80, borderRadius: 40, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center' },
-  
   msgFooter: { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', marginTop: 4, paddingHorizontal: 4 }, 
   mediaFooter: { position: 'absolute', bottom: 8, right: 12, backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 10 },
   msgTime: { fontSize: 10, fontWeight: '500' }, 
-  
   attachmentTray: { paddingVertical: 20, borderTopWidth: 1, flexDirection: 'row', justifyContent: 'space-around' }, 
   attachOption: { alignItems: 'center' }, 
   attachIconBg: { width: 50, height: 50, borderRadius: 18, justifyContent: 'center', alignItems: 'center' },
-  
   inputArea: { flexDirection: 'row', alignItems: 'flex-end', paddingHorizontal: 12, paddingVertical: 10, paddingBottom: Platform.OS === 'ios' ? 25 : 15 }, 
   inputBox: { flex: 1, flexDirection: 'row', alignItems: 'flex-end', borderRadius: 28, paddingHorizontal: 5, paddingVertical: 5, marginHorizontal: 10, minHeight: 50, borderWidth: 1 }, 
   iconBtn: { padding: 8, justifyContent: 'center', marginBottom: 2 }, 
   input: { flex: 1, fontSize: 16, maxHeight: 120, minHeight: 40, paddingTop: 10, paddingBottom: 10, paddingHorizontal: 10 }, 
   micBtn: { width: 50, height: 50, borderRadius: 25, justifyContent: 'center', alignItems: 'center', marginBottom: 2 }, 
-  
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center' }, 
-  actionModal: { width: '80%', borderRadius: 20, padding: 20, borderWidth: 1 },
-  
   fullScreenContainer: { flex: 1, backgroundColor: '#000', justifyContent: 'center', alignItems: 'center' },
   fullScreenCloseBtn: { position: 'absolute', top: 50, right: 20, zIndex: 10, width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.3)', justifyContent: 'center', alignItems: 'center' }
 });
