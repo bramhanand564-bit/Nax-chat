@@ -73,7 +73,12 @@ export default function useCallLogic(route, navigation) {
       const stream = event.streams?.[0];
       if (!stream) return;
       remoteStreamRef.current = stream;
-      if (mountedRef.current) setRemoteStream(stream);
+      if (mountedRef.current) {
+        setRemoteStream(stream);
+        setConnected(true);
+        setBusy(false);
+        setStatus('Connected');
+      }
     };
 
     pc.onicecandidate = async (event) => {
@@ -86,13 +91,18 @@ export default function useCallLogic(route, navigation) {
 
     pc.onconnectionstatechange = () => {
       const state = pc.connectionState;
-      if (state === 'connected' && mountedRef.current) { setConnected(true); setBusy(false); setStatus('Connected'); }
+      if (state === 'connected' && mountedRef.current) { 
+        setConnected(true); setBusy(false); setStatus('Connected'); 
+      }
       if (state === 'disconnected' && mountedRef.current) setStatus('Connection lost');
       if (state === 'failed' && mountedRef.current) { setStatus('Connection failed'); setBusy(false); }
     };
     return pc;
   };
 
+  // ==========================================
+  // CALLER LOGIC
+  // ==========================================
   const startOutgoingCall = async () => {
     if (!friendId) throw new Error('Friend ID missing.');
     const callDoc = doc(collection(db, 'calls'));
@@ -110,12 +120,35 @@ export default function useCallLogic(route, navigation) {
     await updateDoc(callDoc, { offer: { type: offer.type, sdp: offer.sdp } });
 
     listenForAnswer(callDoc.id, pc);
-    listenForRemoteCandidates(callDoc.id, pc, 'answerCandidates');
+    // 🛑 Yahan se maine ICE candidate listener hata diya hai (Bug yahi tha!)
     listenForCallStatus(callDoc.id);
 
     if (mountedRef.current) { setBusy(false); setStatus('Ringing...'); }
   };
 
+  const listenForAnswer = (callId, pc) => {
+    const unsubscribe = onSnapshot(doc(db, 'calls', callId), async (snapshot) => {
+      const data = snapshot.data();
+      if (!data) return;
+      if (data.status === 'rejected') { Alert.alert('Rejected', `${name} declined.`); navigation.goBack(); return; }
+      if (data.status === 'ended') { navigation.goBack(); return; }
+      
+      if (!data.answer || pc.remoteDescription) return;
+      
+      try {
+        await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+        if (mountedRef.current) setStatus('Connecting...');
+        
+        // 🚀 FIX: Jab call puri connect hone wali ho, TAB network raste (ICE) check karo!
+        listenForRemoteCandidates(callId, pc, 'answerCandidates');
+      } catch (error) {}
+    });
+    candidateCleanupRef.current.push(unsubscribe);
+  };
+
+  // ==========================================
+  // RECEIVER LOGIC
+  // ==========================================
   const startIncomingCall = async () => {
     if (!incomingCallId) throw new Error('Call ID missing.');
     callRef.current = incomingCallId;
@@ -139,7 +172,7 @@ export default function useCallLogic(route, navigation) {
     try {
       const stream = await createLocalStream();
       const pc = createPeer(stream);
-      listenForRemoteCandidates(incomingCallId, pc, 'offerCandidates');
+      // 🛑 Yahan se bhi purana ICE candidate listener hata diya gaya hai
 
       const snap = await getDoc(callDoc);
       const data = snap.data();
@@ -148,8 +181,24 @@ export default function useCallLogic(route, navigation) {
         const answer = await pc.createAnswer({ offerToReceiveAudio: true, offerToReceiveVideo: type === 'video' });
         await pc.setLocalDescription(answer);
         await updateDoc(callDoc, { answer: { type: answer.type, sdp: answer.sdp }, status: 'connected' });
+
+        // 🚀 FIX: Yahan par lagaya gaya hai ICE candidate listener
+        listenForRemoteCandidates(incomingCallId, pc, 'offerCandidates');
       }
     } catch (error) { console.log('Accept error:', error); cleanupCall(true); }
+  };
+
+  // ==========================================
+  // COMMON LOGIC
+  // ==========================================
+  const listenForRemoteCandidates = (callId, pc, collectionName) => {
+    const unsubscribe = onSnapshot(collection(db, 'calls', callId, collectionName), (snapshot) => {
+      snapshot.docChanges().forEach(async (change) => {
+        if (change.type !== 'added') return;
+        try { await pc.addIceCandidate(new RTCIceCandidate(change.doc.data())); } catch (error) {}
+      });
+    });
+    candidateCleanupRef.current.push(unsubscribe);
   };
 
   const declineCall = async () => {
@@ -165,31 +214,6 @@ export default function useCallLogic(route, navigation) {
       if (isCaller) await startOutgoingCall();
       else await startIncomingCall();
     } catch (error) { Alert.alert('Call Error', error?.message, [{ text: 'OK', onPress: () => navigation.goBack() }]); }
-  };
-
-  const listenForAnswer = (callId, pc) => {
-    const unsubscribe = onSnapshot(doc(db, 'calls', callId), async (snapshot) => {
-      const data = snapshot.data();
-      if (!data) return;
-      if (data.status === 'rejected') { Alert.alert('Rejected', `${name} declined.`); navigation.goBack(); return; }
-      if (data.status === 'ended') { navigation.goBack(); return; }
-      if (!data.answer || pc.remoteDescription) return;
-      try {
-        await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
-        if (mountedRef.current) setStatus('Connecting...');
-      } catch (error) {}
-    });
-    candidateCleanupRef.current.push(unsubscribe);
-  };
-
-  const listenForRemoteCandidates = (callId, pc, collectionName) => {
-    const unsubscribe = onSnapshot(collection(db, 'calls', callId, collectionName), (snapshot) => {
-      snapshot.docChanges().forEach(async (change) => {
-        if (change.type !== 'added') return;
-        try { await pc.addIceCandidate(new RTCIceCandidate(change.doc.data())); } catch (error) {}
-      });
-    });
-    candidateCleanupRef.current.push(unsubscribe);
   };
 
   const listenForCallStatus = (callId) => {
@@ -244,7 +268,6 @@ export default function useCallLogic(route, navigation) {
     return `${m}:${s}`;
   };
 
-  // 🚀 Returns Everything needed for the UI
   return {
     type, name, isCaller,
     localStream, remoteStream, isMuted, isCameraOff, facing, status, connected, timer, busy,
