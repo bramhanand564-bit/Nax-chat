@@ -1,13 +1,15 @@
 // ==========================================
 // FILE: components/chat/MessageBubble.js
 // ==========================================
-import React from 'react';
-import { View, Text, StyleSheet, Image, TouchableOpacity } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, Image, TouchableOpacity, Modal, SafeAreaView, Linking } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../context/ThemeContext';
+import { Video, ResizeMode } from 'expo-av'; // 🚀 REAL VIDEO PLAYER IMPORT
 
 export default function MessageBubble({ item, isMe, isGlobal }) {
   const { isDark } = useTheme();
+  const [modalVisible, setModalVisible] = useState(false); // For Fullscreen Image
 
   // --- ORIGINAL COLORS PRESERVED ---
   const bubbleMe = '#087EFF';
@@ -16,17 +18,23 @@ export default function MessageBubble({ item, isMe, isGlobal }) {
   const textSub = isDark ? '#8FA6B9' : '#6C8494';
   const border = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
 
-  // 🕒 PREMIUM FEATURE: Time Formatter
+  // 🕒 TIME FORMATTER
   const formatTime = (timestamp) => {
     if (!timestamp) return '';
     const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
+  // 📄 REAL DOCUMENT OPENER
+  const openDocument = () => {
+    if (item.fileUri) {
+      Linking.openURL(item.fileUri).catch(() => alert("Can't open this file."));
+    }
+  };
+
   return (
     <View style={[styles.messageWrapper, isMe ? styles.messageWrapperMe : styles.messageWrapperOther]}>
       
-      {/* ORIGINAL SENDER NAME FOR GLOBAL CHAT */}
       {!isMe && isGlobal && (
         <Text style={[styles.senderName, { color: textSub }]}>@{item.senderName}</Text>
       )}
@@ -38,22 +46,41 @@ export default function MessageBubble({ item, isMe, isGlobal }) {
           : { backgroundColor: bubbleOther, borderBottomLeftRadius: 4, borderWidth: 1, borderColor: border }
       ]}>
         
-        {/* 📷 PREMIUM: IMAGE RENDERING */}
+        {/* 📷 100% REAL IMAGE VIEWER */}
         {item.type === 'image' && item.fileUri && (
-          <Image source={{ uri: item.fileUri }} style={styles.mediaImage} resizeMode="cover" />
+          <>
+            <TouchableOpacity activeOpacity={0.9} onPress={() => setModalVisible(true)}>
+              <Image source={{ uri: item.fileUri }} style={styles.mediaImage} resizeMode="cover" />
+            </TouchableOpacity>
+            
+            {/* FULLSCREEN IMAGE MODAL */}
+            <Modal visible={modalVisible} transparent={true} animationType="fade" onRequestClose={() => setModalVisible(false)}>
+              <SafeAreaView style={styles.modalContainer}>
+                <TouchableOpacity style={styles.closeBtn} onPress={() => setModalVisible(false)}>
+                  <Ionicons name="close" size={32} color="#FFF" />
+                </TouchableOpacity>
+                <Image source={{ uri: item.fileUri }} style={styles.fullScreenImage} resizeMode="contain" />
+              </SafeAreaView>
+            </Modal>
+          </>
         )}
 
-        {/* 🎥 PREMIUM: VIDEO RENDERING */}
+        {/* 🎥 100% REAL VIDEO PLAYER (NO FAKE BUTTON) */}
         {item.type === 'video' && item.fileUri && (
-          <TouchableOpacity activeOpacity={0.8} style={styles.mediaVideo}>
-            <Ionicons name="play-circle" size={44} color="#FFF" />
-            <Text style={{color: '#FFF', fontSize: 12, marginTop: 5, fontWeight: '600'}}>Play Video</Text>
-          </TouchableOpacity>
+          <View style={styles.videoContainer}>
+            <Video
+              style={styles.mediaVideo}
+              source={{ uri: item.fileUri }}
+              useNativeControls={true} // Shows play/pause/volume controls
+              resizeMode={ResizeMode.COVER}
+              isLooping={false}
+            />
+          </View>
         )}
 
-        {/* 📄 PREMIUM: DOCUMENT RENDERING */}
+        {/* 📄 100% REAL DOCUMENT DOWNLOADER */}
         {item.type === 'file' && (
-          <TouchableOpacity activeOpacity={0.8} style={[styles.mediaDocument, { backgroundColor: isMe ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.05)' }]}>
+          <TouchableOpacity activeOpacity={0.8} style={[styles.mediaDocument, { backgroundColor: isMe ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.05)' }]} onPress={openDocument}>
             <Ionicons name="document-text" size={28} color={isMe ? "#FFF" : "#087EFF"} />
             <Text style={[styles.docText, { color: isMe ? '#FFF' : textOther }]} numberOfLines={1}>
               {item.fileName || 'Document File'}
@@ -61,14 +88,14 @@ export default function MessageBubble({ item, isMe, isGlobal }) {
           </TouchableOpacity>
         )}
 
-        {/* 💬 ORIGINAL TEXT RENDERING (Modified slightly to look good under images) */}
+        {/* 💬 TEXT RENDERING */}
         {item.text ? (
           <Text style={[styles.messageText, { color: isMe ? '#FFF' : textOther, marginTop: (item.type && item.type !== 'text') ? 6 : 0 }]}>
             {item.text}
           </Text>
         ) : null}
 
-        {/* 🕒 PREMIUM: MESSAGE TIMESTAMP */}
+        {/* 🕒 TIMESTAMP */}
         <Text style={[styles.timestamp, { color: isMe ? 'rgba(255,255,255,0.7)' : textSub }]}>
           {formatTime(item.createdAt)}
         </Text>
@@ -78,7 +105,6 @@ export default function MessageBubble({ item, isMe, isGlobal }) {
   );
 }
 
-// --- ORIGINAL STYLES PRESERVED + MEDIA STYLES ADDED ---
 const styles = StyleSheet.create({
   messageWrapper: { marginBottom: 15, maxWidth: '82%' },
   messageWrapperMe: { alignSelf: 'flex-end' },
@@ -86,11 +112,17 @@ const styles = StyleSheet.create({
   senderName: { fontSize: 11, marginBottom: 5, marginLeft: 4, fontWeight: '700' },
   messageBubble: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 20 },
   messageText: { fontSize: 15, lineHeight: 22 },
-  
-  // Premium Features Styles
   timestamp: { fontSize: 10, alignSelf: 'flex-end', marginTop: 4 },
+  
+  // Real Media Styles
   mediaImage: { width: 220, height: 220, borderRadius: 12, marginBottom: 5 },
-  mediaVideo: { width: 220, height: 150, backgroundColor: '#000', borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginBottom: 5 },
+  videoContainer: { width: 220, height: 220, borderRadius: 12, overflow: 'hidden', marginBottom: 5, backgroundColor: '#000' },
+  mediaVideo: { width: '100%', height: '100%' },
   mediaDocument: { flexDirection: 'row', alignItems: 'center', padding: 10, borderRadius: 10, marginBottom: 5, width: 220 },
-  docText: { marginLeft: 10, fontSize: 14, fontWeight: '600', flex: 1 }
+  docText: { marginLeft: 10, fontSize: 14, fontWeight: '600', flex: 1 },
+
+  // Modal Styles
+  modalContainer: { flex: 1, backgroundColor: 'rgba(0,0,0,0.95)', justifyContent: 'center', alignItems: 'center' },
+  closeBtn: { position: 'absolute', top: 50, right: 20, zIndex: 10, padding: 10, backgroundColor: 'rgba(0,0,0,0.4)', borderRadius: 20 },
+  fullScreenImage: { width: '100%', height: '80%' }
 });
