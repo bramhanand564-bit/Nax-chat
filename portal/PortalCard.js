@@ -1,13 +1,12 @@
+// ==========================================
+// FILE: portal/PortalCard.js
+// ==========================================
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 
-/**
- * PortalCard - Universal Reusable Component for Nax Super App
- * Handles both 'Bot' and 'Mini App' UI rendering.
- */
-export default function PortalCard({ item, onPress, variant = 'default', rank = null }) {
+export default function PortalCard({ item, navigation, variant = 'default', rank = null }) {
   const { isDark } = useTheme();
 
   // --- COLORS ---
@@ -16,19 +15,35 @@ export default function PortalCard({ item, onPress, variant = 'default', rank = 
   const textSub = isDark ? '#8FA6B9' : '#6C8494';
   const border = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
   const blue = '#087EFF';
-  const defaultColor = item.color || blue;
+  const appColor = item.color || blue;
 
-  // --- RENDER HELPERS ---
-  const isBot = item.type === 'Bot';
-  const subtitle = isBot ? item.username : item.category;
-  const actionText = isBot ? 'Chat' : 'Get';
+  const isBot = item.type === 'Bot' || item.entryType === 'bot';
+  const subtitle = isBot ? (item.username || '@bot') : (item.category || 'Mini App');
+  const actionText = isBot ? 'Chat' : 'Open';
 
-  // --- RANK STYLING (For Trending Variant) ---
+  // 🚀 NAVIGATION ROUTER
+  const handlePress = () => {
+    if (isBot) {
+      navigation.navigate('BotChat', {
+        botId: item.id,
+        name: item.name,
+        botUsername: item.username
+      });
+    } else {
+      navigation.navigate('MiniAppViewer', {
+        title: item.name,
+        url: item.url,
+        appConfig: item,
+        entryType: item.entryType || (item.url ? 'web' : 'declarative')
+      });
+    }
+  };
+
   const getRankStyle = (index) => {
-    if (index === 1) return { color: '#FFD700', fontSize: 24 }; // Gold
-    if (index === 2) return { color: '#C0C0C0', fontSize: 22 }; // Silver
-    if (index === 3) return { color: '#CD7F32', fontSize: 20 }; // Bronze
-    return { color: textSub, fontSize: 16 };
+    if (index === 1) return { color: '#FFD700', fontSize: 22 };
+    if (index === 2) return { color: '#C0C0C0', fontSize: 20 };
+    if (index === 3) return { color: '#CD7F32', fontSize: 18 };
+    return { color: textSub, fontSize: 15 };
   };
 
   return (
@@ -37,30 +52,27 @@ export default function PortalCard({ item, onPress, variant = 'default', rank = 
       style={[
         styles.cardContainer, 
         { backgroundColor: cardBg, borderColor: border },
-        variant === 'grid' && styles.gridCard // Changes layout if variant is 'grid'
+        variant === 'grid' && styles.gridCard
       ]}
-      onPress={() => onPress(item)}
+      onPress={handlePress}
     >
-      {/* RANKING (Only if rank is provided) */}
       {rank !== null && (
         <View style={styles.rankBox}>
           <Text style={[styles.rankText, getRankStyle(rank)]}>{rank}</Text>
         </View>
       )}
 
-      {/* ICON / AVATAR */}
-      <View style={[styles.iconBox, { backgroundColor: `${defaultColor}20` }, variant === 'grid' && styles.gridIconBox]}>
+      <View style={[styles.iconBox, { backgroundColor: `${appColor}20` }, variant === 'grid' && styles.gridIconBox]}>
         {item.icon ? (
-          <Ionicons name={item.icon} size={variant === 'grid' ? 32 : 28} color={defaultColor} />
+          <Ionicons name={item.icon} size={variant === 'grid' ? 30 : 26} color={appColor} />
         ) : (
           <Image 
-            source={{ uri: `https://ui-avatars.com/api/?name=${item.name}&background=${defaultColor.replace('#','')}&color=fff` }} 
+            source={{ uri: `https://ui-avatars.com/api/?name=${encodeURIComponent(item.name || 'App')}&background=${appColor.replace('#','')}&color=fff` }} 
             style={variant === 'grid' ? styles.gridAvatar : styles.listAvatar} 
           />
         )}
       </View>
       
-      {/* APP DETAILS */}
       <View style={[styles.infoBox, variant === 'grid' && styles.gridInfoBox]}>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
           <Text style={[styles.nameText, { color: textMain }]} numberOfLines={1}>{item.name}</Text>
@@ -68,65 +80,42 @@ export default function PortalCard({ item, onPress, variant = 'default', rank = 
         </View>
         <Text style={[styles.subText, { color: textSub }]} numberOfLines={1}>{subtitle}</Text>
         
-        {/* Only show description in 'default' list view */}
-        {variant === 'default' && item.desc && (
-          <Text style={[styles.descText, { color: textSub }]} numberOfLines={1}>{item.desc}</Text>
-        )}
+        {variant === 'default' && item.description ? (
+          <Text style={[styles.descText, { color: textSub }]} numberOfLines={1}>{item.description}</Text>
+        ) : null}
       </View>
 
-      {/* ACTION BUTTON */}
       <TouchableOpacity 
         style={[
           styles.actionBtn, 
-          { backgroundColor: isBot ? '#AF52DE15' : `${blue}15` },
+          { backgroundColor: isBot ? 'rgba(175,82,222,0.15)' : `${blue}15` },
           variant === 'grid' && styles.gridActionBtn
         ]}
-        onPress={() => onPress(item)}
+        onPress={handlePress}
       >
-        <Text style={[
-          styles.actionBtnText, 
-          { color: isBot ? '#AF52DE' : blue }
-        ]}>
+        <Text style={[styles.actionBtnText, { color: isBot ? '#AF52DE' : blue }]}>
           {actionText}
         </Text>
       </TouchableOpacity>
-
     </TouchableOpacity>
   );
 }
 
 const styles = StyleSheet.create({
-  // DEFAULT LIST STYLES
-  cardContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    borderRadius: 18,
-    borderWidth: 1,
-    marginBottom: 12,
-  },
-  rankBox: { width: 30, alignItems: 'center', justifyContent: 'center', marginRight: 8 },
+  cardContainer: { flexDirection: 'row', alignItems: 'center', padding: 14, borderRadius: 18, borderWidth: 1, marginBottom: 12 },
+  rankBox: { width: 28, alignItems: 'center', justifyContent: 'center', marginRight: 8 },
   rankText: { fontWeight: '900' },
-  iconBox: { width: 56, height: 56, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
-  listAvatar: { width: 56, height: 56, borderRadius: 16 },
-  infoBox: { flex: 1, marginLeft: 15, marginRight: 10, justifyContent: 'center' },
+  iconBox: { width: 52, height: 52, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  listAvatar: { width: 52, height: 52, borderRadius: 16 },
+  infoBox: { flex: 1, marginLeft: 14, marginRight: 10, justifyContent: 'center' },
   nameText: { fontSize: 16, fontWeight: '800' },
-  subText: { fontSize: 12, fontWeight: '600', marginTop: 3 },
+  subText: { fontSize: 12, fontWeight: '600', marginTop: 2 },
   descText: { fontSize: 13, marginTop: 4, lineHeight: 18 },
-  actionBtn: { paddingHorizontal: 18, paddingVertical: 8, borderRadius: 14, justifyContent: 'center', alignItems: 'center' },
-  actionBtnText: { fontWeight: '800', fontSize: 14 },
-
-  // GRID CARD OVERRIDES (For categories or horizontal scrolling)
-  gridCard: {
-    flexDirection: 'column',
-    alignItems: 'center',
-    width: 140,
-    padding: 15,
-    marginRight: 15,
-    marginBottom: 0,
-  },
-  gridIconBox: { width: 64, height: 64, borderRadius: 20, marginBottom: 12 },
-  gridAvatar: { width: 64, height: 64, borderRadius: 20 },
-  gridInfoBox: { marginLeft: 0, marginRight: 0, alignItems: 'center', marginBottom: 12 },
-  gridActionBtn: { width: '100%', paddingVertical: 10 }
+  actionBtn: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 14, justifyContent: 'center', alignItems: 'center' },
+  actionBtnText: { fontWeight: '800', fontSize: 13 },
+  gridCard: { flexDirection: 'column', alignItems: 'center', width: 140, padding: 14, marginRight: 14, marginBottom: 0 },
+  gridIconBox: { width: 60, height: 60, borderRadius: 18, marginBottom: 10 },
+  gridAvatar: { width: 60, height: 60, borderRadius: 18 },
+  gridInfoBox: { marginLeft: 0, marginRight: 0, alignItems: 'center', marginBottom: 10 },
+  gridActionBtn: { width: '100%', paddingVertical: 8 }
 });
