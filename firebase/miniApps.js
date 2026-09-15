@@ -1,7 +1,7 @@
 // ==========================================
 // FILE: firebase/miniApps.js
 // ==========================================
-import { db } from './firebaseConfig';
+import { db } from '../firebaseConfig'; // 🐛 FIX: Changed './' to '../'
 import { 
   collection, doc, setDoc, getDocs, query, where, serverTimestamp 
 } from 'firebase/firestore';
