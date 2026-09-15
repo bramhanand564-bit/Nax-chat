@@ -1,224 +1,425 @@
 // ==========================================
 // FILE: portal/PortalHome.js
+// NAX SUPER APP — PORTAL HOME
 // ==========================================
-import React, { useState, useEffect, useCallback } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  ScrollView,
-  SafeAreaView,
-  Platform,
-  RefreshControl,
-  ActivityIndicator
-} from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { useTheme } from '../context/ThemeContext';
 
-// 🚀 IMPORT BOTH APIs
+import React, { useCallback, useState } from 'react';
+import {
+  ActivityIndicator,
+  FlatList,
+  RefreshControl,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+
 import { MiniAppAPI } from '../api/MiniAppAPI';
 import { BotAPI } from '../api/BotAPI';
 import PortalCard from './PortalCard';
 
-const CATEGORIES = [
-  { id: 'c1', name: 'AI Bots', icon: 'hardware-chip', color: '#AF52DE' },
-  { id: 'c2', name: 'Games', icon: 'game-controller', color: '#FF9500' },
-  { id: 'c3', name: 'Tools', icon: 'hammer', color: '#34C759' },
-  { id: 'c4', name: 'Media', icon: 'play-circle', color: '#FF3B30' },
-  { id: 'c5', name: 'Finance', icon: 'wallet', color: '#087EFF' },
-];
-
-export default function PortalHome({ navigation }) {
-  const { isDark } = useTheme();
-
-  // STATE
+const PortalHome = ({ navigation }) => {
   const [apps, setApps] = useState([]);
   const [bots, setBots] = useState([]);
+
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState('');
 
-  // --- COLORS ---
-  const bg = isDark ? '#050A10' : '#F3F7FA';
-  const headerBg = isDark ? '#0B1824' : '#FFFFFF';
-  const cardBg = isDark ? '#101A26' : '#FFFFFF';
-  const inputBg = isDark ? '#14202E' : '#EEF3F7';
-  const textMain = isDark ? '#F4F7FA' : '#142532';
-  const textSub = isDark ? '#8FA6B9' : '#6C8494';
-  const border = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
-  const blue = '#087EFF';
-  const purple = '#AF52DE';
-
-  // --- 🚀 FETCH REAL DATA (APPS + BOTS CONCURRENTLY) ---
   const fetchPortalData = useCallback(async () => {
+    setError('');
+
     try {
-      setLoading(true); // 🚀 FIX: Ensure loading is set to true when fetching starts
-      const [publicApps, publicBots] = await Promise.all([
+      const [publicAppsResult, publicBotsResult] = await Promise.all([
         MiniAppAPI.getPublicMiniApps(),
-        BotAPI.searchBots('') 
+        BotAPI.searchBots(''),
       ]);
-      
-      setApps(publicApps || []);
-      setBots(publicBots || []);
-    } catch (error) {
-      console.log('Error loading portal ecosystem:', error);
+
+      const publicApps = Array.isArray(publicAppsResult)
+        ? publicAppsResult
+        : [];
+
+      const publicBots = Array.isArray(publicBotsResult)
+        ? publicBotsResult
+        : [];
+
+      setApps(publicApps);
+      setBots(publicBots);
+    } catch (err) {
+      console.log('PortalHome fetch error:', err);
+      setError('Unable to load Portal right now.');
+      setApps([]);
+      setBots([]);
     } finally {
-      // 🚀 FIX: This MUST run to stop the spinner even if there's an error
       setLoading(false);
       setRefreshing(false);
     }
   }, []);
 
-  useEffect(() => {
+  React.useEffect(() => {
     fetchPortalData();
   }, [fetchPortalData]);
 
-  const onRefresh = () => {
+  const handleRefresh = () => {
     setRefreshing(true);
     fetchPortalData();
   };
 
-  // Combine both into one ecosystem list
-  const ecosystemItems = [...bots, ...apps];
+  const ecosystemItems = [
+    ...bots.map((bot) => ({
+      ...bot,
+      type: 'Bot',
+      entryType: 'bot',
+    })),
+    ...apps.map((app) => ({
+      ...app,
+      type: 'MiniApp',
+      entryType:
+        app.entryType || (app.url ? 'web' : 'declarative'),
+    })),
+  ];
+
+  const handleOpenSearch = () => {
+    navigation.navigate('PortalSearch');
+  };
+
+  const handleOpenCategories = () => {
+    navigation.navigate('PortalCategories');
+  };
+
+  const handleOpenFeatured = () => {
+    navigation.navigate('PortalFeatured');
+  };
+
+  const handleOpenTrending = () => {
+    navigation.navigate('PortalTrending');
+  };
+
+  const handleOpenStudio = () => {
+    navigation.navigate('StudioHome');
+  };
+
+  const renderItem = ({ item }) => (
+    <PortalCard
+      item={item}
+      navigation={navigation}
+    />
+  );
+
+  if (loading) {
+    return (
+      <View style={styles.centerContainer}>
+        <ActivityIndicator size="large" />
+        <Text style={styles.loadingText}>
+          Fetching ecosystem...
+        </Text>
+      </View>
+    );
+  }
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: bg }]}>
-      
-      {/* HEADER */}
-      <View style={[styles.header, { backgroundColor: headerBg, borderBottomColor: border }]}>
-        <View style={styles.headerTop}>
-          <Text style={[styles.title, { color: textMain }]}>Discover</Text>
-          <TouchableOpacity 
-            style={[styles.studioBtn, { backgroundColor: `${purple}20`, borderColor: purple }]}
-            onPress={() => navigation.navigate('StudioHome')}
-          >
-            <Ionicons name="sparkles" size={16} color={purple} />
-            <Text style={[styles.studioBtnText, { color: purple }]}>Studio</Text>
-          </TouchableOpacity>
+    <View style={styles.container}>
+      <View style={styles.header}>
+        <View>
+          <Text style={styles.title}>Nax Portal</Text>
+          <Text style={styles.subtitle}>
+            Apps, Bots, Games & Tools
+          </Text>
         </View>
 
-        {/* SEARCH TRIGGER */}
-        <TouchableOpacity 
-          activeOpacity={0.85} 
-          style={[styles.searchBox, { backgroundColor: inputBg }]} 
-          onPress={() => navigation.navigate('PortalSearch')}
+        <TouchableOpacity
+          style={styles.refreshButton}
+          onPress={handleRefresh}
         >
-          <Ionicons name="search" size={20} color={textSub} />
-          <Text style={[styles.searchText, { color: textSub }]}>Search bots, mini-apps, tools...</Text>
+          <Text style={styles.refreshText}>↻</Text>
         </TouchableOpacity>
       </View>
 
-      <ScrollView 
-        contentContainerStyle={styles.scrollContent} 
-        showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={blue} />}
-      >
-        
-        {/* HERO BANNER: NAX STUDIO */}
-        <TouchableOpacity 
-          activeOpacity={0.9} 
-          style={[styles.heroBanner, { backgroundColor: purple }]}
-          onPress={() => navigation.navigate('StudioHome')}
+      <View style={styles.actionRow}>
+        <TouchableOpacity
+          style={styles.actionButton}
+          onPress={handleOpenSearch}
         >
-          <View style={styles.heroContent}>
-            <View style={styles.badge}><Text style={styles.badgeText}>AI APP BUILDER</Text></View>
-            <Text style={styles.heroTitle}>Build your own Mini-App</Text>
-            <Text style={styles.heroDesc}>Type what you want and AI will build a safe app instantly.</Text>
-          </View>
-          <Ionicons name="color-wand" size={48} color="#FFF" style={styles.heroIcon} />
+          <Text style={styles.actionText}>Search</Text>
         </TouchableOpacity>
 
-        {/* CATEGORIES SECTION */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={[styles.sectionTitle, { color: textMain }]}>Categories</Text>
-            <TouchableOpacity onPress={() => navigation.navigate('PortalCategories', { category: 'All' })}>
-              <Text style={{ color: blue, fontWeight: '700' }}>See All</Text>
-            </TouchableOpacity>
-          </View>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.catList}>
-            {CATEGORIES.map((cat) => (
-              <TouchableOpacity 
-                key={cat.id} 
-                style={[styles.catCard, { backgroundColor: cardBg, borderColor: border }]}
-                onPress={() => navigation.navigate('PortalCategories', { category: cat.name })}
-              >
-                <View style={[styles.catIconBox, { backgroundColor: `${cat.color}20` }]}>
-                  <Ionicons name={cat.icon} size={24} color={cat.color} />
-                </View>
-                <Text style={[styles.catName, { color: textMain }]}>{cat.name}</Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
+        <TouchableOpacity
+          style={styles.actionButton}
+          onPress={handleOpenCategories}
+        >
+          <Text style={styles.actionText}>Categories</Text>
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.actionRow}>
+        <TouchableOpacity
+          style={styles.actionButton}
+          onPress={handleOpenFeatured}
+        >
+          <Text style={styles.actionText}>Featured</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.actionButton}
+          onPress={handleOpenTrending}
+        >
+          <Text style={styles.actionText}>Trending</Text>
+        </TouchableOpacity>
+      </View>
+
+      <TouchableOpacity
+        style={styles.studioButton}
+        onPress={handleOpenStudio}
+      >
+        <Text style={styles.studioTitle}>
+          Nax Studio
+        </Text>
+
+        <Text style={styles.studioSubtitle}>
+          Create your own Mini-App with AI
+        </Text>
+      </TouchableOpacity>
+
+      {error ? (
+        <View style={styles.errorBox}>
+          <Text style={styles.errorText}>
+            {error}
+          </Text>
+
+          <TouchableOpacity
+            style={styles.retryButton}
+            onPress={fetchPortalData}
+          >
+            <Text style={styles.retryText}>
+              Retry
+            </Text>
+          </TouchableOpacity>
         </View>
+      ) : null}
 
-        {/* 🚀 COMBINED LATEST ECOSYSTEM SECTION */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={[styles.sectionTitle, { color: textMain }]}>Latest Ecosystem</Text>
-            <TouchableOpacity onPress={onRefresh}>
-              <Ionicons name="refresh" size={18} color={blue} />
-            </TouchableOpacity>
-          </View>
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>
+          Latest Ecosystem
+        </Text>
 
-          {loading ? (
-            <View style={styles.loaderBox}>
-              <ActivityIndicator size="small" color={blue} />
-              <Text style={[styles.loaderText, { color: textSub }]}>Fetching ecosystem...</Text>
-            </View>
-          ) : ecosystemItems.length > 0 ? (
-            ecosystemItems.map((item) => (
-              <PortalCard 
-                key={item.id} 
-                item={item} 
-                navigation={navigation} 
-              />
-            ))
-          ) : (
-            <View style={[styles.emptyBox, { backgroundColor: cardBg, borderColor: border }]}>
-              <Ionicons name="grid-outline" size={40} color={textSub} />
-              <Text style={[styles.emptyTitle, { color: textMain }]}>No apps or bots found</Text>
-              <Text style={[styles.emptyDesc, { color: textSub }]}>
-                Be the first! Use Nax Studio to generate and publish an app.
-              </Text>
-            </View>
-          )}
+        <Text style={styles.countText}>
+          {ecosystemItems.length} items
+        </Text>
+      </View>
+
+      {ecosystemItems.length === 0 ? (
+        <View style={styles.emptyContainer}>
+          <Text style={styles.emptyTitle}>
+            No apps or bots yet
+          </Text>
+
+          <Text style={styles.emptyText}>
+            Create something using Nax Studio.
+          </Text>
+
+          <TouchableOpacity
+            style={styles.createButton}
+            onPress={handleOpenStudio}
+          >
+            <Text style={styles.createButtonText}>
+              Create Mini-App
+            </Text>
+          </TouchableOpacity>
         </View>
-
-        <View style={{ height: 40 }} />
-      </ScrollView>
-
-    </SafeAreaView>
+      ) : (
+        <FlatList
+          data={ecosystemItems}
+          keyExtractor={(item, index) =>
+            String(item.id || item.uid || item.slug || index)
+          }
+          renderItem={renderItem}
+          contentContainerStyle={styles.listContent}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+            />
+          }
+          showsVerticalScrollIndicator={false}
+        />
+      )}
+    </View>
   );
-}
+};
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  header: { paddingHorizontal: 18, paddingTop: Platform.OS === 'ios' ? 10 : 15, paddingBottom: 15, borderBottomWidth: 1 },
-  headerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  title: { fontSize: 28, fontWeight: '900' },
-  studioBtn: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, borderWidth: 1, gap: 5 },
-  studioBtnText: { fontSize: 13, fontWeight: '800' },
-  searchBox: { height: 44, borderRadius: 14, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14 },
-  searchText: { fontSize: 15, marginLeft: 10 },
-  scrollContent: { padding: 18 },
-  heroBanner: { borderRadius: 20, padding: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 25, overflow: 'hidden' },
-  heroContent: { flex: 1, marginRight: 10 },
-  badge: { backgroundColor: 'rgba(0,0,0,0.25)', alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, marginBottom: 8 },
-  badgeText: { color: '#FFF', fontSize: 10, fontWeight: '900', letterSpacing: 0.5 },
-  heroTitle: { color: '#FFF', fontSize: 18, fontWeight: '900', marginBottom: 4 },
-  heroDesc: { color: 'rgba(255,255,255,0.85)', fontSize: 12, lineHeight: 16 },
-  heroIcon: { opacity: 0.9 },
-  section: { marginBottom: 25 },
-  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  sectionTitle: { fontSize: 18, fontWeight: '800' },
-  catList: { gap: 12 },
-  catCard: { width: 95, height: 100, borderRadius: 18, borderWidth: 1, alignItems: 'center', justifyContent: 'center', padding: 8 },
-  catIconBox: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
-  catName: { fontSize: 12, fontWeight: '700' },
-  loaderBox: { paddingVertical: 30, alignItems: 'center' },
-  loaderText: { marginTop: 8, fontSize: 13 },
-  emptyBox: { alignItems: 'center', justifyContent: 'center', padding: 30, borderRadius: 18, borderWidth: 1 },
-  emptyTitle: { fontSize: 16, fontWeight: '800', marginTop: 10 },
-  emptyDesc: { fontSize: 13, textAlign: 'center', marginTop: 4, lineHeight: 18 }
+  container: {
+    flex: 1,
+    backgroundColor: '#fff',
+    paddingHorizontal: 16,
+    paddingTop: 16,
+  },
+
+  centerContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#fff',
+  },
+
+  loadingText: {
+    marginTop: 12,
+    fontSize: 15,
+    color: '#666',
+  },
+
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+
+  title: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: '#111',
+  },
+
+  subtitle: {
+    marginTop: 4,
+    fontSize: 14,
+    color: '#777',
+  },
+
+  refreshButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f1f1f1',
+  },
+
+  refreshText: {
+    fontSize: 24,
+    color: '#222',
+  },
+
+  actionRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 10,
+  },
+
+  actionButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+    backgroundColor: '#f2f2f2',
+  },
+
+  actionText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#222',
+  },
+
+  studioButton: {
+    marginTop: 4,
+    marginBottom: 20,
+    padding: 16,
+    borderRadius: 14,
+    backgroundColor: '#111',
+  },
+
+  studioTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#fff',
+  },
+
+  studioSubtitle: {
+    marginTop: 5,
+    fontSize: 13,
+    color: '#ccc',
+  },
+
+  errorBox: {
+    padding: 14,
+    borderRadius: 12,
+    marginBottom: 16,
+    backgroundColor: '#fff1f1',
+  },
+
+  errorText: {
+    fontSize: 14,
+    color: '#b00020',
+  },
+
+  retryButton: {
+    alignSelf: 'flex-start',
+    marginTop: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: '#b00020',
+  },
+
+  retryText: {
+    color: '#fff',
+    fontWeight: '600',
+  },
+
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#111',
+  },
+
+  countText: {
+    fontSize: 13,
+    color: '#777',
+  },
+
+  listContent: {
+    paddingBottom: 30,
+  },
+
+  emptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 50,
+  },
+
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#222',
+  },
+
+  emptyText: {
+    marginTop: 6,
+    fontSize: 14,
+    color: '#777',
+    textAlign: 'center',
+  },
+
+  createButton: {
+    marginTop: 18,
+    paddingHorizontal: 18,
+    paddingVertical: 11,
+    borderRadius: 10,
+    backgroundColor: '#111',
+  },
+
+  createButtonText: {
+    color: '#fff',
+    fontWeight: '600',
+  },
 });
+
+export default PortalHome;
