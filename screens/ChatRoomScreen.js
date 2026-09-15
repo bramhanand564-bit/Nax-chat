@@ -2,7 +2,7 @@
 // FILE: screens/ChatRoomScreen.js
 // ==========================================
 import React, { useRef, useEffect } from 'react';
-import { View, FlatList, StyleSheet, SafeAreaView, ActivityIndicator, Animated } from 'react-native';
+import { View, FlatList, StyleSheet, SafeAreaView, ActivityIndicator, Animated, Text } from 'react-native';
 import { auth } from '../firebaseConfig';
 import { useTheme } from '../context/ThemeContext';
 
@@ -19,9 +19,9 @@ export default function ChatRoomScreen({ route, navigation }) {
   const { chatId = 'global', chatName = 'Global Room', friendId, friendAvatar } = route.params || {};
   const isGlobal = chatId === 'global';
 
-  // 🚀 USE OUR NEW HOOK
+  // 🚀 USE OUR NEW HOOK (NOW WITH uploadProgress)
   const { 
-    messages, inputText, setInputText, loading, sending, 
+    messages, inputText, setInputText, loading, sending, uploadProgress,
     handleSend, handleMediaPick, handleDocumentPick, initiateCall 
   } = useChatRoomLogic(chatId, isGlobal, friendId, chatName, navigation);
 
@@ -46,6 +46,16 @@ export default function ChatRoomScreen({ route, navigation }) {
           onCall={() => initiateCall('voice')}
           onVideoCall={() => initiateCall('video')}
         />
+
+        {/* 🚀 REAL UPLOAD PROGRESS BAR */}
+        {uploadProgress > 0 && uploadProgress < 100 && (
+          <View style={styles.progressContainer}>
+            <Text style={styles.progressText}>Uploading... {uploadProgress}%</Text>
+            <View style={styles.progressBarBg}>
+              <View style={[styles.progressBarFill, { width: `${uploadProgress}%` }]} />
+            </View>
+          </View>
+        )}
 
         {/* 💬 CHAT AREA */}
         <View style={styles.chatArea}>
@@ -84,5 +94,11 @@ export default function ChatRoomScreen({ route, navigation }) {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   chatArea: { flex: 1 },
-  listContent: { paddingHorizontal: 15, paddingBottom: 15, paddingTop: 10 }
+  listContent: { paddingHorizontal: 15, paddingBottom: 15, paddingTop: 10 },
+  
+  // 🚀 New Styles for Progress Bar
+  progressContainer: { padding: 10, backgroundColor: 'rgba(8, 126, 255, 0.1)', alignItems: 'center' },
+  progressText: { fontSize: 12, fontWeight: '700', color: '#087EFF', marginBottom: 5 },
+  progressBarBg: { width: '80%', height: 4, backgroundColor: 'rgba(8, 126, 255, 0.2)', borderRadius: 2 },
+  progressBarFill: { height: '100%', backgroundColor: '#087EFF', borderRadius: 2 }
 });
