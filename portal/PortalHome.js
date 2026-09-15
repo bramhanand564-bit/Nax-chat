@@ -1,26 +1,22 @@
-import React from 'react';
+// ==========================================
+// FILE: portal/PortalHome.js
+// ==========================================
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   ScrollView,
-  Image,
   SafeAreaView,
   Platform,
-  TextInput
+  RefreshControl,
+  ActivityIndicator
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
-
-// --- MOCK DATA (Will be moved to Firebase/API later) ---
-const FEATURED_ITEM = {
-  id: 'f1',
-  name: 'Nax AI Assistant',
-  desc: 'Your ultimate personal AI companion for writing, coding, and daily tasks.',
-  color: '#AF52DE',
-  image: 'https://ui-avatars.com/api/?name=AI&background=AF52DE&color=fff&size=200'
-};
+import { MiniAppAPI } from '../api/MiniAppAPI';
+import PortalCard from './PortalCard';
 
 const CATEGORIES = [
   { id: 'c1', name: 'AI Bots', icon: 'hardware-chip', color: '#AF52DE' },
@@ -30,14 +26,12 @@ const CATEGORIES = [
   { id: 'c5', name: 'Finance', icon: 'wallet', color: '#087EFF' },
 ];
 
-const TRENDING_APPS = [
-  { id: 't1', name: '2048', type: 'Mini App', category: 'Games', icon: 'grid', color: '#FF9500' },
-  { id: 't2', name: '@translator', type: 'Bot', category: 'Productivity', icon: 'language', color: '#087EFF' },
-  { id: 't3', name: 'Weather', type: 'Mini App', category: 'Tools', icon: 'partly-sunny', color: '#32ADE6' },
-];
-
 export default function PortalHome({ navigation }) {
   const { isDark } = useTheme();
+
+  const [apps, setApps] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
   // --- COLORS ---
   const bg = isDark ? '#050A10' : '#F3F7FA';
@@ -48,11 +42,28 @@ export default function PortalHome({ navigation }) {
   const textSub = isDark ? '#8FA6B9' : '#6C8494';
   const border = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
   const blue = '#087EFF';
+  const purple = '#AF52DE';
 
-  // Navigate to Search Screen (Step 2 of Phase 5)
-  const openSearch = () => {
-    // navigation.navigate('PortalSearch'); 
-    console.log('Open Portal Search');
+  // --- FETCH REAL DATA FROM API ---
+  const fetchPortalData = useCallback(async () => {
+    try {
+      const publicApps = await MiniAppAPI.getPublicMiniApps();
+      setApps(publicApps || []);
+    } catch (error) {
+      console.log('Error loading portal apps:', error);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchPortalData();
+  }, [fetchPortalData]);
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    fetchPortalData();
   };
 
   return (
@@ -62,44 +73,63 @@ export default function PortalHome({ navigation }) {
       <View style={[styles.header, { backgroundColor: headerBg, borderBottomColor: border }]}>
         <View style={styles.headerTop}>
           <Text style={[styles.title, { color: textMain }]}>Discover</Text>
-          <TouchableOpacity style={[styles.profileBtn, { backgroundColor: inputBg }]}>
-            <Ionicons name="notifications-outline" size={22} color={textMain} />
+          <TouchableOpacity 
+            style={[styles.studioBtn, { backgroundColor: `${purple}20`, borderColor: purple }]}
+            onPress={() => navigation.navigate('StudioHome')}
+          >
+            <Ionicons name="sparkles" size={16} color={purple} />
+            <Text style={[styles.studioBtnText, { color: purple }]}>Studio</Text>
           </TouchableOpacity>
         </View>
 
-        {/* FAKE SEARCH BAR (Acts as a button to open PortalSearch) */}
-        <TouchableOpacity activeOpacity={0.9} style={[styles.searchBox, { backgroundColor: inputBg }]} onPress={openSearch}>
+        {/* SEARCH TRIGGER */}
+        <TouchableOpacity 
+          activeOpacity={0.85} 
+          style={[styles.searchBox, { backgroundColor: inputBg }]} 
+          onPress={() => navigation.navigate('PortalSearch')}
+        >
           <Ionicons name="search" size={20} color={textSub} />
-          <Text style={[styles.searchText, { color: textSub }]}>Search bots, apps, games...</Text>
+          <Text style={[styles.searchText, { color: textSub }]}>Search bots, mini-apps, tools...</Text>
         </TouchableOpacity>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView 
+        contentContainerStyle={styles.scrollContent} 
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={blue} />}
+      >
         
-        {/* HERO / FEATURED BANNER */}
-        <TouchableOpacity activeOpacity={0.85} style={[styles.heroCard, { backgroundColor: FEATURED_ITEM.color }]}>
+        {/* HERO BANNER: NAX STUDIO */}
+        <TouchableOpacity 
+          activeOpacity={0.9} 
+          style={[styles.heroBanner, { backgroundColor: purple }]}
+          onPress={() => navigation.navigate('StudioHome')}
+        >
           <View style={styles.heroContent}>
-            <View style={styles.heroBadge}><Text style={styles.heroBadgeText}>FEATURED</Text></View>
-            <Text style={styles.heroTitle}>{FEATURED_ITEM.name}</Text>
-            <Text style={styles.heroDesc} numberOfLines={2}>{FEATURED_ITEM.desc}</Text>
-            <View style={styles.heroBtn}>
-              <Text style={[styles.heroBtnText, { color: FEATURED_ITEM.color }]}>Try Now</Text>
-            </View>
+            <View style={styles.badge}><Text style={styles.badgeText}>AI APP BUILDER</Text></View>
+            <Text style={styles.heroTitle}>Build your own Mini-App</Text>
+            <Text style={styles.heroDesc}>Type what you want and AI will build a safe app instantly.</Text>
           </View>
-          <Image source={{ uri: FEATURED_ITEM.image }} style={styles.heroImage} />
+          <Ionicons name="color-wand" size={48} color="#FFF" style={styles.heroIcon} />
         </TouchableOpacity>
 
-        {/* CATEGORIES (Horizontal) */}
+        {/* CATEGORIES SECTION */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={[styles.sectionTitle, { color: textMain }]}>Categories</Text>
-            <TouchableOpacity><Text style={{ color: blue, fontWeight: '600' }}>See All</Text></TouchableOpacity>
+            <TouchableOpacity onPress={() => navigation.navigate('PortalCategories')}>
+              <Text style={{ color: blue, fontWeight: '700' }}>See All</Text>
+            </TouchableOpacity>
           </View>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.hList}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.catList}>
             {CATEGORIES.map((cat) => (
-              <TouchableOpacity key={cat.id} style={[styles.catCard, { backgroundColor: cardBg, borderColor: border }]}>
+              <TouchableOpacity 
+                key={cat.id} 
+                style={[styles.catCard, { backgroundColor: cardBg, borderColor: border }]}
+                onPress={() => navigation.navigate('PortalCategories', { category: cat.name })}
+              >
                 <View style={[styles.catIconBox, { backgroundColor: `${cat.color}20` }]}>
-                  <Ionicons name={cat.icon} size={26} color={cat.color} />
+                  <Ionicons name={cat.icon} size={24} color={cat.color} />
                 </View>
                 <Text style={[styles.catName, { color: textMain }]}>{cat.name}</Text>
               </TouchableOpacity>
@@ -107,24 +137,37 @@ export default function PortalHome({ navigation }) {
           </ScrollView>
         </View>
 
-        {/* TRENDING SECTION (Vertical List) */}
+        {/* LIVE / PUBLISHED APPS SECTION */}
         <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: textMain, marginBottom: 15 }]}>Trending Now</Text>
-          {TRENDING_APPS.map((item, index) => (
-            <TouchableOpacity key={item.id} style={[styles.trendingCard, { backgroundColor: cardBg, borderColor: border }]}>
-              <Text style={[styles.trendingRank, { color: textSub }]}>{index + 1}</Text>
-              <View style={[styles.trendingIconBox, { backgroundColor: `${item.color}20` }]}>
-                <Ionicons name={item.icon} size={24} color={item.color} />
-              </View>
-              <View style={styles.trendingInfo}>
-                <Text style={[styles.trendingName, { color: textMain }]} numberOfLines={1}>{item.name}</Text>
-                <Text style={[styles.trendingSub, { color: textSub }]}>{item.category} • {item.type}</Text>
-              </View>
-              <TouchableOpacity style={[styles.getBtn, { backgroundColor: `${blue}15` }]}>
-                <Text style={[styles.getBtnText, { color: blue }]}>Get</Text>
-              </TouchableOpacity>
+          <View style={styles.sectionHeader}>
+            <Text style={[styles.sectionTitle, { color: textMain }]}>Latest Mini-Apps</Text>
+            <TouchableOpacity onPress={onRefresh}>
+              <Ionicons name="refresh" size={18} color={blue} />
             </TouchableOpacity>
-          ))}
+          </View>
+
+          {loading ? (
+            <View style={styles.loaderBox}>
+              <ActivityIndicator size="small" color={blue} />
+              <Text style={[styles.loaderText, { color: textSub }]}>Fetching ecosystem...</Text>
+            </View>
+          ) : apps.length > 0 ? (
+            apps.map((appItem) => (
+              <PortalCard 
+                key={appItem.id} 
+                item={appItem} 
+                navigation={navigation} 
+              />
+            ))
+          ) : (
+            <View style={[styles.emptyBox, { backgroundColor: cardBg, borderColor: border }]}>
+              <Ionicons name="grid-outline" size={40} color={textSub} />
+              <Text style={[styles.emptyTitle, { color: textMain }]}>No apps published yet</Text>
+              <Text style={[styles.emptyDesc, { color: textSub }]}>
+                Be the first! Use Nax Studio to generate and publish an app.
+              </Text>
+            </View>
+          )}
         </View>
 
         <View style={{ height: 40 }} />
@@ -134,42 +177,33 @@ export default function PortalHome({ navigation }) {
   );
 }
 
-// --- STYLES ---
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: { paddingHorizontal: 20, paddingTop: Platform.OS === 'ios' ? 10 : 20, paddingBottom: 15, borderBottomWidth: 1 },
-  headerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
-  title: { fontSize: 32, fontWeight: '800' },
-  profileBtn: { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center' },
-  searchBox: { height: 48, borderRadius: 12, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 15 },
-  searchText: { fontSize: 16, marginLeft: 10 },
-  scrollContent: { paddingTop: 20, paddingHorizontal: 20 },
-  
-  heroCard: { borderRadius: 24, padding: 20, flexDirection: 'row', overflow: 'hidden', marginBottom: 30, height: 180 },
-  heroContent: { flex: 1, justifyContent: 'center', zIndex: 2 },
-  heroBadge: { backgroundColor: 'rgba(0,0,0,0.3)', alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, marginBottom: 10 },
-  heroBadgeText: { color: '#FFF', fontSize: 10, fontWeight: '900', letterSpacing: 1 },
-  heroTitle: { color: '#FFF', fontSize: 22, fontWeight: '900', marginBottom: 6 },
-  heroDesc: { color: 'rgba(255,255,255,0.85)', fontSize: 13, marginBottom: 15, lineHeight: 18 },
-  heroBtn: { backgroundColor: '#FFF', alignSelf: 'flex-start', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 14 },
-  heroBtnText: { fontWeight: '800', fontSize: 13 },
-  heroImage: { position: 'absolute', right: -30, bottom: -20, width: 140, height: 140, opacity: 0.9, zIndex: 1, borderRadius: 70 },
-  
-  section: { marginBottom: 30 },
-  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
-  sectionTitle: { fontSize: 20, fontWeight: '800' },
-  
-  hList: { paddingRight: 20, gap: 12 },
-  catCard: { width: 105, height: 115, borderRadius: 20, borderWidth: 1, alignItems: 'center', justifyContent: 'center', padding: 10 },
-  catIconBox: { width: 50, height: 50, borderRadius: 25, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
-  catName: { fontSize: 14, fontWeight: '700' },
-  
-  trendingCard: { flexDirection: 'row', alignItems: 'center', padding: 15, borderRadius: 18, borderWidth: 1, marginBottom: 12 },
-  trendingRank: { fontSize: 16, fontWeight: '800', width: 25, textAlign: 'center' },
-  trendingIconBox: { width: 50, height: 50, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginLeft: 5 },
-  trendingInfo: { flex: 1, marginLeft: 15, marginRight: 10 },
-  trendingName: { fontSize: 16, fontWeight: '800' },
-  trendingSub: { fontSize: 12, marginTop: 3, fontWeight: '500' },
-  getBtn: { paddingHorizontal: 18, paddingVertical: 8, borderRadius: 16 },
-  getBtnText: { fontWeight: '800', fontSize: 14 }
+  header: { paddingHorizontal: 18, paddingTop: Platform.OS === 'ios' ? 10 : 15, paddingBottom: 15, borderBottomWidth: 1 },
+  headerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  title: { fontSize: 28, fontWeight: '900' },
+  studioBtn: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, borderWidth: 1, gap: 5 },
+  studioBtnText: { fontSize: 13, fontWeight: '800' },
+  searchBox: { height: 44, borderRadius: 14, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14 },
+  searchText: { fontSize: 15, marginLeft: 10 },
+  scrollContent: { padding: 18 },
+  heroBanner: { borderRadius: 20, padding: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 25, overflow: 'hidden' },
+  heroContent: { flex: 1, marginRight: 10 },
+  badge: { backgroundColor: 'rgba(0,0,0,0.25)', alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, marginBottom: 8 },
+  badgeText: { color: '#FFF', fontSize: 10, fontWeight: '900', letterSpacing: 0.5 },
+  heroTitle: { color: '#FFF', fontSize: 18, fontWeight: '900', marginBottom: 4 },
+  heroDesc: { color: 'rgba(255,255,255,0.85)', fontSize: 12, lineHeight: 16 },
+  heroIcon: { opacity: 0.9 },
+  section: { marginBottom: 25 },
+  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  sectionTitle: { fontSize: 18, fontWeight: '800' },
+  catList: { gap: 12 },
+  catCard: { width: 95, height: 100, borderRadius: 18, borderWidth: 1, alignItems: 'center', justifyContent: 'center', padding: 8 },
+  catIconBox: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
+  catName: { fontSize: 12, fontWeight: '700' },
+  loaderBox: { paddingVertical: 30, alignItems: 'center' },
+  loaderText: { marginTop: 8, fontSize: 13 },
+  emptyBox: { alignItems: 'center', justifyContent: 'center', padding: 30, borderRadius: 18, borderWidth: 1 },
+  emptyTitle: { fontSize: 16, fontWeight: '800', marginTop: 10 },
+  emptyDesc: { fontSize: 13, textAlign: 'center', marginTop: 4, lineHeight: 18 }
 });
