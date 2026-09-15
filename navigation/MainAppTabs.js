@@ -9,11 +9,11 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 
-// 🚀 IMPORT SCREENS
+// 🚀 FIXED: Using WalletScreen instead of SettingsScreen
 import ChatsScreen from '../screens/ChatsScreen';
 import PortalHome from '../portal/PortalHome';
 import MomentsScreen from '../screens/MomentsScreen';
-import SettingsScreen from '../screens/SettingsScreen'; 
+import WalletScreen from '../screens/WalletScreen'; 
 
 // TAB CONFIGURATION
 const TABS = [
@@ -35,7 +35,7 @@ export default function MainAppTabs({ navigation }) {
 
   // Function to handle tab press with Spring Bounce Effect
   const handleTabPress = (tabId) => {
-    if (activeTab === tabId) return; // Ignore if already on the same tab
+    if (activeTab === tabId) return; 
 
     // Run Spring Animation
     Animated.sequence([
@@ -52,7 +52,7 @@ export default function MainAppTabs({ navigation }) {
       case 'Chats': return <ChatsScreen navigation={navigation} />;
       case 'Portals': return <PortalHome navigation={navigation} />;
       case 'Moments': return <MomentsScreen navigation={navigation} />;
-      case 'Settings': return <SettingsScreen navigation={navigation} />;
+      case 'Settings': return <WalletScreen navigation={navigation} />; // 🚀 FIXED HERE
       default: return <ChatsScreen navigation={navigation} />;
     }
   };
@@ -61,7 +61,7 @@ export default function MainAppTabs({ navigation }) {
   const mainBg = isDark ? '#050A10' : '#F3F7FA';
   const glassBg = isDark ? 'rgba(11, 24, 36, 0.85)' : 'rgba(255, 255, 255, 0.9)';
   const borderCol = isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)';
-  const activeCol = '#087EFF'; // Nax Blue
+  const activeCol = '#087EFF'; 
   const inactiveCol = isDark ? '#6C8494' : '#A0B3C1';
 
   return (
@@ -80,7 +80,7 @@ export default function MainAppTabs({ navigation }) {
           return (
             <TouchableOpacity
               key={tab.id}
-              activeOpacity={1} // Prevents default fade, we use our own bounce
+              activeOpacity={1} 
               onPress={() => handleTabPress(tab.id)}
               style={styles.navItem}
             >
@@ -112,7 +112,7 @@ export default function MainAppTabs({ navigation }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  content: { flex: 1, paddingBottom: 85 }, // Push content up so it's not hidden behind the floating bar
+  content: { flex: 1, paddingBottom: 85 }, 
   glassNavBar: {
     flexDirection: 'row',
     justifyContent: 'space-around',
