@@ -16,51 +16,65 @@ export async function uploadToCloudinary({ fileUri, fileName, mimeType, onProgre
   if (!info.exists) throw new Error('Selected file was not found.');
 
   return new Promise((resolve, reject) => {
-    const formData = new FormData();
-    formData.append('file', {
-      uri: fileUri,
-      name: fileName || `nax-${Date.now()}`,
-      type: mimeType || 'application/octet-stream'
-    });
-    formData.append('upload_preset', UPLOAD_PRESET);
-    formData.append('return_delete_token', 'true');
-
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', UPLOAD_URL);
-
-    // 🚀 REAL-TIME PROGRESS BAR TRACKING
-    xhr.upload.onprogress = (event) => {
-      if (event.lengthComputable && onProgress) {
-        const progress = Math.round((event.loaded / event.total) * 100);
-        onProgress(progress);
+    
+    // 🚀 EXPO NATIVE UPLOADER (No XMLHttpRequest!)
+    // Ye file ko direct hardware se utha kar upload karta hai (100% Safe & Fast)
+    const uploadTask = FileSystem.createUploadTask(
+      UPLOAD_URL,
+      fileUri,
+      {
+        httpMethod: 'POST',
+        uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+        fieldName: 'file',
+        mimeType: mimeType || 'application/octet-stream',
+        parameters: {
+          upload_preset: UPLOAD_PRESET,
+          return_delete_token: 'true',
+        },
+      },
+      (event) => {
+        // 📊 REAL-TIME PROGRESS BAR TRACKING
+        if (onProgress && event.totalBytesExpectedToSend > 0) {
+          const progress = Math.round((event.totalBytesSent / event.totalBytesExpectedToSend) * 100);
+          onProgress(progress);
+        }
       }
-    };
+    );
 
-    xhr.onload = () => {
-      if (xhr.status === 200) {
-        const data = JSON.parse(xhr.responseText);
-        resolve({
-          url: data.secure_url,
-          secureUrl: data.secure_url,
-          publicId: data.public_id || null,
-          resourceType: data.resource_type || null,
-          format: data.format || null,
-          bytes: data.bytes || info.size || null,
-          originalFilename: data.original_filename || fileName || null,
-          deleteToken: data.delete_token || null,
-          createdAt: data.created_at || null
-        });
-      } else {
-        const errorData = JSON.parse(xhr.responseText);
-        reject(new Error(errorData?.error?.message || 'Cloudinary upload failed.'));
-      }
-    };
+    // Upload Start
+    uploadTask.uploadAsync()
+      .then((response) => {
+        if (response.status === 200 || response.status === 201) {
+          const data = JSON.parse(response.body);
+          
+          if (!data.secure_url) {
+            reject(new Error('Cloudinary did not return a valid URL.'));
+            return;
+          }
 
-    xhr.onerror = () => reject(new Error('Network error during upload.'));
-    xhr.send(formData);
+          resolve({
+            url: data.secure_url,
+            secureUrl: data.secure_url, // 🌍 Real Working URL (No Black Box)
+            publicId: data.public_id || null,
+            resourceType: data.resource_type || null,
+            format: data.format || null,
+            bytes: data.bytes || info.size || null,
+            originalFilename: data.original_filename || fileName || null,
+            deleteToken: data.delete_token || null,
+            createdAt: data.created_at || null
+          });
+        } else {
+          reject(new Error('Upload failed with status: ' + response.status));
+        }
+      })
+      .catch((error) => {
+        console.log("Expo Upload Error:", error);
+        reject(new Error('Network error during upload.'));
+      });
   });
 }
 
+// Delete logic ke liye fetch theek hai kyunki isme file read nahi karni hoti
 export async function deleteCloudinaryByToken(deleteToken) {
   if (!deleteToken) return { success: false, reason: 'No delete token.' };
 
