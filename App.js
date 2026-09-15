@@ -1,5 +1,5 @@
 // ==========================================
-// FILE: App.js (Cleaned & Modular)
+// FILE: App.js
 // ==========================================
 import React, { useEffect, useState } from 'react';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
@@ -9,13 +9,13 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from './firebaseConfig';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 
-// --- MANAGERS (Background Tasks) ---
+// --- MANAGERS ---
 import PresenceManager from './managers/PresenceManager';
 import P2PManager from './managers/P2PManager';
 import CallManager from './managers/CallManager';
 
 // --- SCREENS ---
-import MainAppTabs from './navigation/MainAppTabs'; 
+import MainAppTabs from './navigation/MainAppTabs'; // 🚀 This path must match your folder structure!
 import ChatRoomScreen from './screens/ChatRoomScreen';
 import AuthScreen from './screens/AuthScreen';
 import TicTacToeScreen from './screens/TicTacToeScreen';
@@ -63,14 +63,13 @@ function AppNavigator() {
   if (loading) {
     return (
       <View style={[styles.loadingContainer, { backgroundColor: isDark ? '#121212' : '#F5F5F7' }]}>
-        <ActivityIndicator size="large" color="#007AFF" />
+        <ActivityIndicator size="large" color="#087EFF" />
       </View>
     );
   }
 
   return (
     <>
-      {/* 🚀 ALL BACKGROUND PROCESSES RUN HERE SECURELY */}
       {user && (
         <>
           <PresenceManager user={user} />
