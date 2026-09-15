@@ -15,7 +15,10 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
+
+// 🚀 IMPORT BOTH APIs
 import { MiniAppAPI } from '../api/MiniAppAPI';
+import { BotAPI } from '../api/BotAPI';
 import PortalCard from './PortalCard';
 
 const CATEGORIES = [
@@ -29,7 +32,9 @@ const CATEGORIES = [
 export default function PortalHome({ navigation }) {
   const { isDark } = useTheme();
 
+  // STATE: Separated but will be combined in render
   const [apps, setApps] = useState([]);
+  const [bots, setBots] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -44,13 +49,19 @@ export default function PortalHome({ navigation }) {
   const blue = '#087EFF';
   const purple = '#AF52DE';
 
-  // --- FETCH REAL DATA FROM API ---
+  // --- 🚀 FETCH REAL DATA (APPS + BOTS CONCURRENTLY) ---
   const fetchPortalData = useCallback(async () => {
     try {
-      const publicApps = await MiniAppAPI.getPublicMiniApps();
+      // Promise.all to fetch both ecosystems simultaneously for speed
+      const [publicApps, publicBots] = await Promise.all([
+        MiniAppAPI.getPublicMiniApps(),
+        BotAPI.searchBots('') // Fetch all public bots
+      ]);
+      
       setApps(publicApps || []);
+      setBots(publicBots || []);
     } catch (error) {
-      console.log('Error loading portal apps:', error);
+      console.log('Error loading portal ecosystem:', error);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -65,6 +76,9 @@ export default function PortalHome({ navigation }) {
     setRefreshing(true);
     fetchPortalData();
   };
+
+  // Combine both into one ecosystem list
+  const ecosystemItems = [...bots, ...apps];
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: bg }]}>
@@ -117,7 +131,7 @@ export default function PortalHome({ navigation }) {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={[styles.sectionTitle, { color: textMain }]}>Categories</Text>
-            <TouchableOpacity onPress={() => navigation.navigate('PortalCategories')}>
+            <TouchableOpacity onPress={() => navigation.navigate('PortalCategories', { category: 'All' })}>
               <Text style={{ color: blue, fontWeight: '700' }}>See All</Text>
             </TouchableOpacity>
           </View>
@@ -137,10 +151,10 @@ export default function PortalHome({ navigation }) {
           </ScrollView>
         </View>
 
-        {/* LIVE / PUBLISHED APPS SECTION */}
+        {/* 🚀 COMBINED LATEST ECOSYSTEM SECTION */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <Text style={[styles.sectionTitle, { color: textMain }]}>Latest Mini-Apps</Text>
+            <Text style={[styles.sectionTitle, { color: textMain }]}>Latest Ecosystem</Text>
             <TouchableOpacity onPress={onRefresh}>
               <Ionicons name="refresh" size={18} color={blue} />
             </TouchableOpacity>
@@ -151,18 +165,18 @@ export default function PortalHome({ navigation }) {
               <ActivityIndicator size="small" color={blue} />
               <Text style={[styles.loaderText, { color: textSub }]}>Fetching ecosystem...</Text>
             </View>
-          ) : apps.length > 0 ? (
-            apps.map((appItem) => (
+          ) : ecosystemItems.length > 0 ? (
+            ecosystemItems.map((item) => (
               <PortalCard 
-                key={appItem.id} 
-                item={appItem} 
+                key={item.id} 
+                item={item} 
                 navigation={navigation} 
               />
             ))
           ) : (
             <View style={[styles.emptyBox, { backgroundColor: cardBg, borderColor: border }]}>
               <Ionicons name="grid-outline" size={40} color={textSub} />
-              <Text style={[styles.emptyTitle, { color: textMain }]}>No apps published yet</Text>
+              <Text style={[styles.emptyTitle, { color: textMain }]}>No apps or bots found</Text>
               <Text style={[styles.emptyDesc, { color: textSub }]}>
                 Be the first! Use Nax Studio to generate and publish an app.
               </Text>
