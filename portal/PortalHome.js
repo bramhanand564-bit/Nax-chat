@@ -32,7 +32,7 @@ const CATEGORIES = [
 export default function PortalHome({ navigation }) {
   const { isDark } = useTheme();
 
-  // STATE: Separated but will be combined in render
+  // STATE
   const [apps, setApps] = useState([]);
   const [bots, setBots] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -52,10 +52,10 @@ export default function PortalHome({ navigation }) {
   // --- 🚀 FETCH REAL DATA (APPS + BOTS CONCURRENTLY) ---
   const fetchPortalData = useCallback(async () => {
     try {
-      // Promise.all to fetch both ecosystems simultaneously for speed
+      setLoading(true); // 🚀 FIX: Ensure loading is set to true when fetching starts
       const [publicApps, publicBots] = await Promise.all([
         MiniAppAPI.getPublicMiniApps(),
-        BotAPI.searchBots('') // Fetch all public bots
+        BotAPI.searchBots('') 
       ]);
       
       setApps(publicApps || []);
@@ -63,6 +63,7 @@ export default function PortalHome({ navigation }) {
     } catch (error) {
       console.log('Error loading portal ecosystem:', error);
     } finally {
+      // 🚀 FIX: This MUST run to stop the spinner even if there's an error
       setLoading(false);
       setRefreshing(false);
     }
