@@ -1,170 +1,630 @@
-import React from 'react';
+// ==========================================
+// FILE: portal/PortalTrending.js
+// NAX SUPER APP — PORTAL TRENDING
+// ==========================================
+
+import React, {
+  useCallback,
+  useEffect,
+  useState,
+} from 'react';
+
 import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
+  ActivityIndicator,
   FlatList,
+  Platform,
+  RefreshControl,
   SafeAreaView,
-  Platform
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
+
 import { Ionicons } from '@expo/vector-icons';
+
 import { useTheme } from '../context/ThemeContext';
+import { MiniAppAPI } from '../api/MiniAppAPI';
+import { BotAPI } from '../api/BotAPI';
+import PortalCard from './PortalCard';
 
-// --- MOCK TRENDING DATABASE ---
-const TRENDING_LIST = [
-  { id: 't1', name: '2048 Game', type: 'Mini App', category: 'Games', icon: 'grid', color: '#FF9500', tag: '🔥 Top 1 Today', users: '24.5K' },
-  { id: 't2', name: 'Web Translator', type: 'Mini App', category: 'Productivity', icon: 'language', color: '#087EFF', tag: '📈 Rising Fast', users: '18.2K' },
-  { id: 't3', name: 'Nax AI Assistant', type: 'Bot', category: 'AI Bots', username: '@nax_ai', icon: 'hardware-chip', color: '#AF52DE', tag: '⭐ Most Active', users: '15.9K' },
-  { id: 't4', name: 'Code Master', type: 'Bot', category: 'Developer', username: '@code_master', icon: 'code-slash', color: '#34C759', tag: 'Popular', users: '12.1K' },
-  { id: 't5', name: 'Tic Tac Toe', type: 'Mini App', category: 'Games', icon: 'close-circle', color: '#FF3B30', tag: 'Classic', users: '10.4K' },
-  { id: 't6', name: 'Weather Radar', type: 'Mini App', category: 'Tools', icon: 'partly-sunny', color: '#32ADE6', tag: 'Trending', users: '8.7K' },
-  { id: 't7', name: 'Finance Tracker', type: 'Mini App', category: 'Tools', icon: 'wallet', color: '#18A66A', tag: 'New Hit', users: '5.2K' }
-];
-
-export default function PortalTrending({ navigation }) {
+const PortalTrending = ({ navigation }) => {
   const { isDark } = useTheme();
 
-  // --- COLORS ---
-  const bg = isDark ? '#050A10' : '#F3F7FA';
-  const headerBg = isDark ? '#0B1824' : '#FFFFFF';
-  const cardBg = isDark ? '#101A26' : '#FFFFFF';
-  const textMain = isDark ? '#F4F7FA' : '#142532';
-  const textSub = isDark ? '#8FA6B9' : '#6C8494';
-  const border = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState('');
+
+  // ------------------------------------------
+  // THEME
+  // ------------------------------------------
+
+  const bg = isDark
+    ? '#050A10'
+    : '#F3F7FA';
+
+  const headerBg = isDark
+    ? '#0B1824'
+    : '#FFFFFF';
+
+  const textMain = isDark
+    ? '#F4F7FA'
+    : '#142532';
+
+  const textSub = isDark
+    ? '#8FA6B9'
+    : '#6C8494';
+
+  const border = isDark
+    ? 'rgba(255,255,255,0.08)'
+    : 'rgba(0,0,0,0.06)';
+
   const blue = '#087EFF';
 
-  // --- HANDLERS ---
-  const handleItemPress = (item) => {
-    if (item.type === 'Bot') {
-      navigation.navigate('ChatRoom', { 
-        friendId: item.id, 
-        chatName: item.name, 
-        friendUsername: item.username 
-      });
-    } else {
-      navigation.navigate('MiniAppInstall', { app: item });
-    }
-  };
+  // ------------------------------------------
+  // LOAD TRENDING DATA
+  // ------------------------------------------
 
-  // --- RENDER RANKING STYLES ---
-  const getRankStyle = (index) => {
-    if (index === 0) return { color: '#FFD700', fontSize: 24 }; // Gold for Rank 1
-    if (index === 1) return { color: '#C0C0C0', fontSize: 22 }; // Silver for Rank 2
-    if (index === 2) return { color: '#CD7F32', fontSize: 20 }; // Bronze for Rank 3
-    return { color: textSub, fontSize: 16 }; // Normal for the rest
-  };
+  const fetchTrending = useCallback(
+    async (isRefresh = false) => {
+      if (isRefresh) {
+        setRefreshing(true);
+      } else {
+        setLoading(true);
+      }
 
-  // --- RENDER TRENDING CARD ---
-  const renderTrendingCard = ({ item, index }) => (
-    <TouchableOpacity 
-      activeOpacity={0.8}
-      style={[styles.trendingCard, { backgroundColor: cardBg, borderColor: border }]}
-      onPress={() => handleItemPress(item)}
-    >
-      {/* Rank Indicator */}
-      <View style={styles.rankContainer}>
-        <Text style={[styles.rankText, getRankStyle(index)]}>{index + 1}</Text>
-      </View>
+      setError('');
 
-      {/* App Icon */}
-      <View style={[styles.iconBox, { backgroundColor: `${item.color}20` }]}>
-        <Ionicons name={item.icon} size={28} color={item.color} />
-      </View>
-      
-      {/* App Details */}
-      <View style={styles.appInfo}>
-        <Text style={[styles.appName, { color: textMain }]} numberOfLines={1}>{item.name}</Text>
-        <Text style={[styles.appSub, { color: textSub }]}>
-          {item.type === 'Bot' ? item.username : item.category}
-        </Text>
-        <View style={styles.metricsRow}>
-          <Text style={[styles.tagText, { color: item.color }]}>{item.tag}</Text>
-          <Text style={[styles.usersText, { color: textSub }]}> • {item.users} users</Text>
-        </View>
-      </View>
+      try {
+        const [
+          publicAppsResult,
+          publicBotsResult,
+        ] = await Promise.all([
+          MiniAppAPI.getPublicMiniApps(),
+          BotAPI.searchBots(''),
+        ]);
 
-      {/* Action Button */}
-      <TouchableOpacity 
-        style={[styles.getBtn, { backgroundColor: `${blue}15` }]}
-        onPress={() => handleItemPress(item)}
-      >
-        <Text style={[styles.getBtnText, { color: blue }]}>Get</Text>
-      </TouchableOpacity>
-    </TouchableOpacity>
+        const apps = Array.isArray(
+          publicAppsResult
+        )
+          ? publicAppsResult
+          : [];
+
+        const bots = Array.isArray(
+          publicBotsResult
+        )
+          ? publicBotsResult
+          : [];
+
+        const normalizedApps = apps.map(
+          (app) => ({
+            ...app,
+            type: 'MiniApp',
+            entryType:
+              app.entryType ||
+              (app.url
+                ? 'web'
+                : 'declarative'),
+          })
+        );
+
+        const normalizedBots = bots.map(
+          (bot) => ({
+            ...bot,
+            type: 'Bot',
+            entryType: 'bot',
+          })
+        );
+
+        const ecosystem = [
+          ...normalizedBots,
+          ...normalizedApps,
+        ];
+
+        // --------------------------------------
+        // TRENDING SCORE
+        //
+        // Higher installs + views + rating =
+        // higher position.
+        // --------------------------------------
+
+        const scoreItem = (item) => {
+          const installs =
+            Number(item.installs) || 0;
+
+          const views =
+            Number(item.views) || 0;
+
+          const usage =
+            Number(item.usage) ||
+            Number(item.usageCount) ||
+            0;
+
+          const rating =
+            Number(item.rating) || 0;
+
+          const trendingScore =
+            Number(
+              item.trendingScore
+            ) || 0;
+
+          return (
+            trendingScore * 1000 +
+            installs * 5 +
+            usage * 4 +
+            views +
+            rating * 25
+          );
+        };
+
+        ecosystem.sort(
+          (a, b) =>
+            scoreItem(b) -
+            scoreItem(a)
+        );
+
+        setItems(
+          ecosystem.slice(0, 30)
+        );
+      } catch (err) {
+        console.log(
+          'PortalTrending fetch error:',
+          err
+        );
+
+        setItems([]);
+
+        setError(
+          'Unable to load Trending right now.'
+        );
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    []
   );
+
+  useEffect(() => {
+    fetchTrending(false);
+  }, [fetchTrending]);
+
+  // ------------------------------------------
+  // RENDER
+  // ------------------------------------------
+
+  const renderItem = ({
+    item,
+    index,
+  }) => (
+    <View style={styles.itemContainer}>
+      <View style={styles.rankContainer}>
+        <Text
+          style={[
+            styles.rankText,
+            {
+              color:
+                index === 0
+                  ? '#D4AF37'
+                  : index === 1
+                  ? '#A8A8A8'
+                  : index === 2
+                  ? '#B87333'
+                  : textSub,
+              fontSize:
+                index < 3
+                  ? 21
+                  : 16,
+            },
+          ]}
+        >
+          {index + 1}
+        </Text>
+      </View>
+
+      <View style={styles.cardContainer}>
+        <PortalCard
+          item={item}
+          navigation={navigation}
+        />
+      </View>
+    </View>
+  );
+
+  // ------------------------------------------
+  // LOADING
+  // ------------------------------------------
+
+  if (loading) {
+    return (
+      <SafeAreaView
+        style={[
+          styles.container,
+          {
+            backgroundColor: bg,
+          },
+        ]}
+      >
+        <View style={styles.loadingState}>
+          <ActivityIndicator
+            size="large"
+            color={blue}
+          />
+
+          <Text
+            style={[
+              styles.loadingText,
+              {
+                color: textSub,
+              },
+            ]}
+          >
+            Loading Trending...
+          </Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // ------------------------------------------
+  // UI
+  // ------------------------------------------
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: bg }]}>
-      
+    <SafeAreaView
+      style={[
+        styles.container,
+        {
+          backgroundColor: bg,
+        },
+      ]}
+    >
       {/* HEADER */}
-      <View style={[styles.header, { backgroundColor: headerBg, borderBottomColor: border }]}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back" size={24} color={textMain} />
+      <View
+        style={[
+          styles.header,
+          {
+            backgroundColor: headerBg,
+            borderBottomColor: border,
+          },
+        ]}
+      >
+        <TouchableOpacity
+          style={styles.headerButton}
+          onPress={() =>
+            navigation.goBack()
+          }
+        >
+          <Ionicons
+            name="arrow-back"
+            size={24}
+            color={textMain}
+          />
         </TouchableOpacity>
-        <View style={styles.headerTitleContainer}>
-          <Text style={[styles.headerTitle, { color: textMain }]}>Top Charts</Text>
-          <Text style={[styles.headerSubtitle, { color: textSub }]}>Most popular this week</Text>
+
+        <View
+          style={styles.headerCenter}
+        >
+          <Text
+            style={[
+              styles.headerTitle,
+              {
+                color: textMain,
+              },
+            ]}
+          >
+            Top Charts
+          </Text>
+
+          <Text
+            style={[
+              styles.headerSubtitle,
+              {
+                color: textSub,
+              },
+            ]}
+          >
+            Most popular right now
+          </Text>
         </View>
-        <TouchableOpacity style={styles.iconBtn}>
-          <Ionicons name="filter" size={22} color={textMain} />
+
+        <TouchableOpacity
+          style={styles.headerButton}
+          onPress={() =>
+            fetchTrending(true)
+          }
+        >
+          <Ionicons
+            name="refresh"
+            size={21}
+            color={textMain}
+          />
         </TouchableOpacity>
       </View>
 
-      {/* LIST OF TRENDING APPS */}
-      <FlatList
-        data={TRENDING_LIST}
-        keyExtractor={(item) => item.id}
-        renderItem={renderTrendingCard}
-        contentContainerStyle={styles.listContent}
-        showsVerticalScrollIndicator={false}
-      />
+      {/* ERROR */}
+      {error ? (
+        <View
+          style={[
+            styles.errorBox,
+            {
+              backgroundColor:
+                isDark
+                  ? '#35151B'
+                  : '#FFF1F1',
+            },
+          ]}
+        >
+          <Text
+            style={[
+              styles.errorText,
+              {
+                color: isDark
+                  ? '#FF9AA8'
+                  : '#B00020',
+              },
+            ]}
+          >
+            {error}
+          </Text>
 
+          <TouchableOpacity
+            style={[
+              styles.retryButton,
+              {
+                backgroundColor: blue,
+              },
+            ]}
+            onPress={() =>
+              fetchTrending(false)
+            }
+          >
+            <Text
+              style={
+                styles.retryText
+              }
+            >
+              Retry
+            </Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
+
+      {/* LIST */}
+      <FlatList
+        data={items}
+        keyExtractor={(
+          item,
+          index
+        ) =>
+          String(
+            item.id ||
+              item.uid ||
+              item.slug ||
+              `trending-${index}`
+          )
+        }
+        renderItem={renderItem}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() =>
+              fetchTrending(true)
+            }
+          />
+        }
+        contentContainerStyle={
+          items.length === 0
+            ? styles.emptyList
+            : styles.listContent
+        }
+        showsVerticalScrollIndicator={
+          false
+        }
+        ListEmptyComponent={
+          <View
+            style={styles.emptyState}
+          >
+            <Ionicons
+              name="trending-up-outline"
+              size={58}
+              color={textSub}
+            />
+
+            <Text
+              style={[
+                styles.emptyTitle,
+                {
+                  color: textMain,
+                },
+              ]}
+            >
+              Nothing Trending Yet
+            </Text>
+
+            <Text
+              style={[
+                styles.emptyText,
+                {
+                  color: textSub,
+                },
+              ]}
+            >
+              As users install and use
+              apps and bots, they will
+              appear here.
+            </Text>
+
+            <TouchableOpacity
+              style={[
+                styles.browseButton,
+                {
+                  backgroundColor: blue,
+                },
+              ]}
+              onPress={() =>
+                navigation.goBack()
+              }
+            >
+              <Text
+                style={
+                  styles.browseButtonText
+                }
+              >
+                Back to Portal
+              </Text>
+            </TouchableOpacity>
+          </View>
+        }
+      />
     </SafeAreaView>
   );
-}
+};
 
-// --- STYLES ---
+// ==========================================
+// STYLES
+// ==========================================
+
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  header: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
+  container: {
+    flex: 1,
+  },
+
+  loadingState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  loadingText: {
+    marginTop: 12,
+    fontSize: 14,
+  },
+
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 10, 
-    paddingTop: Platform.OS === 'ios' ? 10 : 15, 
-    paddingBottom: 12, 
-    borderBottomWidth: 1 
+    paddingHorizontal: 10,
+    paddingTop:
+      Platform.OS === 'ios'
+        ? 10
+        : 15,
+    paddingBottom: 13,
+    borderBottomWidth: 1,
   },
-  backBtn: { width: 44, height: 44, justifyContent: 'center', alignItems: 'center' },
-  iconBtn: { width: 44, height: 44, justifyContent: 'center', alignItems: 'center' },
-  headerTitleContainer: { flex: 1, alignItems: 'center' },
-  headerTitle: { fontSize: 18, fontWeight: '800' },
-  headerSubtitle: { fontSize: 12, marginTop: 2, fontWeight: '500' },
-  
-  listContent: { padding: 15, paddingBottom: 40 },
-  
-  trendingCard: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    padding: 16, 
-    borderRadius: 18, 
-    borderWidth: 1, 
-    marginBottom: 12 
+
+  headerButton: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  rankContainer: { width: 35, alignItems: 'center', justifyContent: 'center', marginRight: 5 },
-  rankText: { fontWeight: '900' },
-  
-  iconBox: { width: 56, height: 56, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
-  
-  appInfo: { flex: 1, marginLeft: 15, marginRight: 10 },
-  appName: { fontSize: 16, fontWeight: '800' },
-  appSub: { fontSize: 12, fontWeight: '600', marginTop: 3, marginBottom: 6 },
-  
-  metricsRow: { flexDirection: 'row', alignItems: 'center' },
-  tagText: { fontSize: 11, fontWeight: '800' },
-  usersText: { fontSize: 11, fontWeight: '500' },
-  
-  getBtn: { paddingHorizontal: 18, paddingVertical: 8, borderRadius: 14 },
-  getBtnText: { fontWeight: '800', fontSize: 14 }
+
+  headerCenter: {
+    flex: 1,
+    alignItems: 'center',
+  },
+
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+  },
+
+  headerSubtitle: {
+    marginTop: 2,
+    fontSize: 11,
+  },
+
+  errorBox: {
+    marginHorizontal: 15,
+    marginTop: 12,
+    padding: 12,
+    borderRadius: 12,
+  },
+
+  errorText: {
+    fontSize: 14,
+  },
+
+  retryButton: {
+    alignSelf: 'flex-start',
+    marginTop: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+
+  retryText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+
+  listContent: {
+    padding: 12,
+    paddingBottom: 40,
+  },
+
+  itemContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+
+  rankContainer: {
+    width: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  rankText: {
+    fontWeight: '900',
+  },
+
+  cardContainer: {
+    flex: 1,
+  },
+
+  emptyList: {
+    flexGrow: 1,
+    padding: 15,
+  },
+
+  emptyState: {
+    flex: 1,
+    minHeight: 350,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 30,
+  },
+
+  emptyTitle: {
+    marginTop: 15,
+    fontSize: 19,
+    fontWeight: '800',
+  },
+
+  emptyText: {
+    marginTop: 8,
+    fontSize: 14,
+    lineHeight: 21,
+    textAlign: 'center',
+  },
+
+  browseButton: {
+    marginTop: 18,
+    paddingHorizontal: 20,
+    paddingVertical: 11,
+    borderRadius: 10,
+  },
+
+  browseButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
 });
+
+export default PortalTrending;
