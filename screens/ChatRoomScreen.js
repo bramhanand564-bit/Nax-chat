@@ -26,6 +26,11 @@ import {
 import { auth, db } from '../firebaseConfig';
 import { useTheme } from '../context/ThemeContext';
 
+// ---> NEW IMPORTS FOR BOT ECOSYSTEM <---
+import { BotService } from '../services/BotService';
+import { BotMessageHandler } from '../bot/BotMessageHandler';
+// ---------------------------------------
+
 const BLUE = '#087EFF';
 const GREEN = '#34C759';
 const RED = '#FF3B30';
@@ -197,6 +202,23 @@ export default function ChatRoomScreen({ route, navigation }) {
       setTimeout(() => {
         listRef.current?.scrollToOffset({ offset: 0, animated: true });
       }, 80);
+
+      // ---> NEW: BOT TRIGGER LOGIC <---
+      // Check if the chat is a private chat with a bot, then trigger the response.
+      if (chatId !== 'global_chats' && friendId) {
+        BotService.getBotById(friendId)
+          .then(bot => {
+            if (bot) {
+              // Bot received message, wait 600ms then reply
+              setTimeout(() => {
+                BotMessageHandler.processMessage(chatId, friendId, value, currentUser.displayName || 'User');
+              }, 600);
+            }
+          })
+          .catch(err => console.log('Bot trigger error:', err));
+      }
+      // ---------------------------------
+
     } catch (error) {
       console.log('Send message:', error);
       Alert.alert('Error', 'Message send nahi hua.');
@@ -439,6 +461,14 @@ export default function ChatRoomScreen({ route, navigation }) {
     return (
       <Pressable onLongPress={() => onLongPress(item)} style={[styles.row, { justifyContent: mine ? 'flex-end' : 'flex-start' }]}>
         <View style={[styles.bubble, { backgroundColor: mine ? BLUE : otherBubble, borderBottomRightRadius: mine ? 5 : 18, borderBottomLeftRadius: mine ? 18 : 5 }]}>
+          
+          {/* ---> SHOW BOT NAME IN PRIVATE CHAT IF IT'S A BOT <--- */}
+          {!mine && item.isBot && (
+            <Text style={{ color: '#AF52DE', fontSize: 11, fontWeight: 'bold', marginBottom: 3 }}>
+              {item.senderName}
+            </Text>
+          )}
+
           {item.replyToText ? (
             <View style={styles.replyInside}>
               <Text style={styles.replyLabel}>Reply</Text>
