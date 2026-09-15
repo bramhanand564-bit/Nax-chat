@@ -8,7 +8,7 @@ import { useTheme } from '../context/ThemeContext';
 import { db, auth } from '../firebaseConfig';
 import { collection, query, where, getDocs, onSnapshot, doc, setDoc, serverTimestamp } from 'firebase/firestore';
 
-// --- NEW COMPONENT IMPORTS ---
+// --- COMPONENT IMPORTS ---
 import ChatItem from '../components/ChatItem';
 import NewChatModal from '../components/NewChatModal';
 
@@ -69,7 +69,7 @@ export default function ChatsScreen({ navigation }) {
     return { uri: `https://ui-avatars.com/api/?name=${encodedName}&background=1687FF&color=ffffff` };
   };
 
-  // --- SEARCH USER ---
+  // --- SEARCH USER OR BOT ---
   const handleSearch = async () => {
     const username = normalizeUsername(searchQuery);
     if (!username) return Alert.alert('Username required', 'Pehle @username enter karo.');
@@ -81,29 +81,48 @@ export default function ChatsScreen({ navigation }) {
     setSearchResult(null);
 
     try {
+      let foundData = null;
+      let isBot = false;
+
+      // 1. Check in Users Collection
       const usersRef = collection(db, 'users');
       const userQuery = query(usersRef, where('usernameLower', '==', username));
       const snapshot = await getDocs(userQuery);
 
-      if (snapshot.empty) {
-        Alert.alert('User Not Found', `@${username} nahi mila.`);
+      if (!snapshot.empty) {
+        const userDoc = snapshot.docs[0];
+        foundData = userDoc.data();
+        foundData.uid = foundData.uid || userDoc.id;
+      } else {
+        // 2. If not a User, Check in Bots Collection
+        const botsRef = collection(db, 'bots');
+        const botQuery = query(botsRef, where('username', '==', username));
+        const botSnap = await getDocs(botQuery);
+
+        if (!botSnap.empty) {
+          const botDoc = botSnap.docs[0];
+          foundData = botDoc.data();
+          foundData.uid = botDoc.id; // Bots use their document ID as UID
+          isBot = true;
+        }
+      }
+
+      if (!foundData) {
+        Alert.alert('Not Found', `@${username} nahi mila.`);
         setSearching(false); return;
       }
 
-      const userDoc = snapshot.docs[0];
-      const data = userDoc.data();
-      const friendId = data.uid || userDoc.id;
-
-      if (friendId === currentUser.uid) {
+      if (foundData.uid === currentUser.uid) {
         Alert.alert('Oops!', 'Tum khud ko chat nahi kar sakte.');
         setSearching(false); return;
       }
 
       setSearchResult({
-        uid: friendId,
-        username: data.username || `@${username}`,
-        name: data.name || data.displayName || data.username || `@${username}`,
-        avatar: data.avatar || data.photoURL || '',
+        uid: foundData.uid,
+        username: foundData.username || `@${username}`,
+        name: foundData.name || foundData.displayName || foundData.username || `@${username}`,
+        avatar: foundData.avatar || foundData.photoURL || '',
+        isBot: isBot
       });
     } catch (error) {
       console.log('Search error:', error);
@@ -137,6 +156,8 @@ export default function ChatsScreen({ navigation }) {
       setDoc(myChatRef, {
         chatId, type: 'private', friendId, friendName: friend.name || 'Nax User', friendUsername: friend.username || '', friendAvatar: friend.avatar || '', updatedAt: serverTimestamp()
       }, { merge: true }),
+      
+      // We also update the friend's list (even if it's a bot, it won't hurt, bots can have user_chats subcollection)
       setDoc(friendChatRef, {
         chatId, type: 'private', friendId: myId, friendName: myName, friendUsername: myUsernameValue, friendAvatar: myProfile?.avatar || myProfile?.photoURL || '', updatedAt: serverTimestamp()
       }, { merge: true }),
@@ -180,15 +201,23 @@ export default function ChatsScreen({ navigation }) {
     return (
       <View style={[styles.resultBox, { backgroundColor: cardBg, borderColor: border }]}>
         <View style={styles.resultHeader}>
-          <Text style={[styles.resultTitle, { color: textMain }]}>User Found</Text>
+          <Text style={[styles.resultTitle, { color: textMain }]}>Result Found</Text>
           <TouchableOpacity onPress={() => setSearchResult(null)}><Ionicons name="close" size={22} color={textSub} /></TouchableOpacity>
         </View>
         <TouchableOpacity activeOpacity={0.8} style={styles.resultUser} onPress={() => openNewChat(searchResult)} disabled={openingChat}>
           <Image source={getBasicAvatar(searchResult.name, searchResult.avatar)} style={styles.resultAvatar} />
+          
           <View style={styles.resultInfo}>
-            <Text style={[styles.resultName, { color: textMain }]} numberOfLines={1}>{searchResult.name}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Text style={[styles.resultName, { color: textMain }]} numberOfLines={1}>{searchResult.name}</Text>
+              {/* BOT BADGE */}
+              {searchResult.isBot && (
+                <View style={styles.botBadge}><Text style={styles.botBadgeText}>BOT</Text></View>
+              )}
+            </View>
             <Text style={[styles.resultUsername, { color: blue }]}>{searchResult.username?.startsWith('@') ? searchResult.username : `@${searchResult.username}`}</Text>
           </View>
+          
           <View style={styles.chatButton}>
             {openingChat ? <ActivityIndicator size="small" color="#FFFFFF" /> : <><Ionicons name="chatbubble" size={17} color="#FFFFFF" /><Text style={styles.chatButtonText}>Chat</Text></>}
           </View>
@@ -250,7 +279,7 @@ export default function ChatsScreen({ navigation }) {
             <View style={styles.emptyState}>
               <View style={[styles.emptyIcon, { backgroundColor: isDark ? '#122B3B' : '#E5F1FB' }]}><Ionicons name="chatbubbles-outline" size={52} color={blue} /></View>
               <Text style={[styles.emptyTitle, { color: textMain }]}>No Private Chats Yet</Text>
-              <Text style={[styles.emptyText, { color: textSub }]}>Search a friend by @username and start chatting.</Text>
+              <Text style={[styles.emptyText, { color: textSub }]}>Search a friend or bot by @username and start chatting.</Text>
               <TouchableOpacity activeOpacity={0.8} style={styles.emptyButton} onPress={() => setShowNewMenu(true)}><Ionicons name="add" size={20} color="#FFFFFF" /><Text style={styles.emptyButtonText}>Start New Chat</Text></TouchableOpacity>
             </View>
           }
@@ -265,7 +294,7 @@ export default function ChatsScreen({ navigation }) {
       <NewChatModal
         visible={showNewMenu}
         onClose={() => setShowNewMenu(false)}
-        onStartPrivateChat={() => { setShowNewMenu(false); Alert.alert('New Private Chat', 'Upar @username search karo aur user ko select karo.'); }}
+        onStartPrivateChat={() => { setShowNewMenu(false); Alert.alert('New Chat', 'Upar @username search karo aur user/bot ko select karo.'); }}
         onOpenGlobalRoom={() => { setShowNewMenu(false); navigation.navigate('ChatRoom', { chatId: 'global_chats', chatName: 'Global Room' }); }}
         onCreateBot={() => { setShowNewMenu(false); navigation.navigate('BotCreate'); }}
       />
@@ -274,7 +303,7 @@ export default function ChatsScreen({ navigation }) {
   );
 }
 
-// Global Helper Required for sorting inside ChatsScreen
+// Global Helper
 function getTime(value) {
   if (!value) return 0;
   if (typeof value.toMillis === 'function') return value.toMillis();
@@ -283,6 +312,7 @@ function getTime(value) {
   return 0;
 }
 
+// --- STYLES ---
 const styles = StyleSheet.create({
   container: { flex: 1 },
   header: { paddingTop: 18, paddingHorizontal: 18, paddingBottom: 15, borderBottomWidth: 1 },
@@ -303,6 +333,11 @@ const styles = StyleSheet.create({
   resultAvatar: { width: 54, height: 54, borderRadius: 27 },
   resultInfo: { flex: 1, marginLeft: 12 },
   resultName: { fontSize: 16, fontWeight: '800' },
+  
+  // BOT BADGE STYLES
+  botBadge: { backgroundColor: '#AF52DE', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, marginLeft: 8 },
+  botBadgeText: { color: '#FFF', fontSize: 9, fontWeight: '900', letterSpacing: 0.5 },
+
   resultUsername: { marginTop: 3, fontSize: 14, fontWeight: '600' },
   chatButton: { minWidth: 68, height: 38, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, backgroundColor: '#1687FF', paddingHorizontal: 12, borderRadius: 19 },
   chatButtonText: { color: '#FFFFFF', fontWeight: '700', fontSize: 13 },
