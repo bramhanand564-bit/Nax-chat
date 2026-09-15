@@ -56,8 +56,8 @@ import {
   markP2PTransferCompleted
 } from './utils/webrtcFileTransfer';
 
+// --- EXISTING SCREENS ---
 import ChatsScreen from './screens/ChatsScreen';
-import PortalsScreen from './screens/PortalsScreen';
 import MomentsScreen from './screens/MomentsScreen';
 import WalletScreen from './screens/WalletScreen';
 import ChatRoomScreen from './screens/ChatRoomScreen';
@@ -67,6 +67,26 @@ import NaxStudioScreen from './screens/NaxStudioScreen';
 import BotChatScreen from './screens/BotChatScreen';
 import BotCreateScreen from './screens/BotCreateScreen';
 import CallScreen from './screens/CallScreen';
+// import PortalsScreen from './screens/PortalsScreen'; // (Replaced by PortalHome below)
+
+// --- NEW PHASE 4, 5, 6 SCREENS ---
+import PortalHome from './portal/PortalHome';
+import PortalSearch from './portal/PortalSearch';
+import PortalCategories from './portal/PortalCategories';
+import PortalFeatured from './portal/PortalFeatured';
+import PortalTrending from './portal/PortalTrending';
+
+import MiniAppHome from './mini-apps/MiniAppHome';
+import MiniAppViewer from './mini-apps/MiniAppViewer';
+import MiniAppInstall from './mini-apps/MiniAppInstall';
+
+import StudioHome from './studio/StudioHome';
+import StudioPrompt from './studio/StudioPrompt';
+import StudioGenerator from './studio/StudioGenerator';
+import StudioPreview from './studio/StudioPreview';
+import StudioTester from './studio/StudioTester';
+import StudioPublisher from './studio/StudioPublisher';
+
 
 const Stack = createNativeStackNavigator();
 
@@ -93,8 +113,9 @@ function MainAppTabs({ navigation }) {
     }
 
     if (activeTab === 'Portals') {
+      // 🚀 INTEGRATION: Now directly rendering the new Portal ecosystem
       return (
-        <PortalsScreen
+        <PortalHome
           navigation={navigation}
         />
       );
@@ -178,7 +199,7 @@ function MainAppTabs({ navigation }) {
 }
 
 /* ---------------------------------- */
-/* PRESENCE */
+/* PRESENCE (Unchanged) */
 /* ---------------------------------- */
 
 function PresenceManager({ user }) {
@@ -280,7 +301,7 @@ function PresenceManager({ user }) {
 }
 
 /* ---------------------------------- */
-/* INCOMING P2P FILES */
+/* INCOMING P2P FILES (Unchanged) */
 /* ---------------------------------- */
 
 function IncomingP2PTransferManager({
@@ -499,7 +520,7 @@ function IncomingP2PTransferManager({
 }
 
 /* ---------------------------------- */
-/* INCOMING CALLS */
+/* INCOMING CALLS (Unchanged) */
 /* ---------------------------------- */
 
 function IncomingCallManager({ user }) {
@@ -707,40 +728,34 @@ function AppNavigator() {
         >
           {user ? (
             <>
-              <Stack.Screen
-                name="HomeTabs"
-                component={MainAppTabs}
-              />
+              {/* EXISTING SCREENS */}
+              <Stack.Screen name="HomeTabs" component={MainAppTabs} />
+              <Stack.Screen name="ChatRoom" component={ChatRoomScreen} />
+              <Stack.Screen name="TicTacToe" component={TicTacToeScreen} />
+              <Stack.Screen name="NaxStudio" component={NaxStudioScreen} />
+              <Stack.Screen name="BotChat" component={BotChatScreen} />
+              <Stack.Screen name="BotCreate" component={BotCreateScreen} />
+              <Stack.Screen name="Call" component={CallScreen} />
 
-              <Stack.Screen
-                name="ChatRoom"
-                component={ChatRoomScreen}
-              />
+              {/* NEW PORTAL SCREENS */}
+              <Stack.Screen name="PortalHome" component={PortalHome} />
+              <Stack.Screen name="PortalSearch" component={PortalSearch} />
+              <Stack.Screen name="PortalCategories" component={PortalCategories} />
+              <Stack.Screen name="PortalFeatured" component={PortalFeatured} />
+              <Stack.Screen name="PortalTrending" component={PortalTrending} />
 
-              <Stack.Screen
-                name="TicTacToe"
-                component={TicTacToeScreen}
-              />
+              {/* NEW MINI APPS SCREENS */}
+              <Stack.Screen name="MiniAppHome" component={MiniAppHome} />
+              <Stack.Screen name="MiniAppViewer" component={MiniAppViewer} />
+              <Stack.Screen name="MiniAppInstall" component={MiniAppInstall} />
 
-              <Stack.Screen
-                name="NaxStudio"
-                component={NaxStudioScreen}
-              />
-
-              <Stack.Screen
-                name="BotChat"
-                component={BotChatScreen}
-              />
-
-              <Stack.Screen
-                name="BotCreate"
-                component={BotCreateScreen}
-              />
-
-              <Stack.Screen
-                name="Call"
-                component={CallScreen}
-              />
+              {/* NEW NAX STUDIO SCREENS */}
+              <Stack.Screen name="StudioHome" component={StudioHome} />
+              <Stack.Screen name="StudioPrompt" component={StudioPrompt} />
+              <Stack.Screen name="StudioGenerator" component={StudioGenerator} />
+              <Stack.Screen name="StudioPreview" component={StudioPreview} />
+              <Stack.Screen name="StudioTester" component={StudioTester} />
+              <Stack.Screen name="StudioPublisher" component={StudioPublisher} />
             </>
           ) : (
             <Stack.Screen
