@@ -1,3 +1,6 @@
+// ==========================================
+// FILE: mini-apps/MiniAppInstall.js
+// ==========================================
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, SafeAreaView,
@@ -5,17 +8,17 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
-import { db, auth } from '../firebaseConfig';
-import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+
+// 🚀 IMPORT OUR REAL API
+import { MiniAppAPI } from '../api/MiniAppAPI';
 
 export default function MiniAppInstall({ route, navigation }) {
   const { isDark } = useTheme();
   
-  // Params passed from Portal or Search
+  // Params passed from PortalCard
   const { app } = route.params || {};
   
   const [installing, setInstalling] = useState(false);
-  const currentUser = auth.currentUser;
 
   // --- COLORS ---
   const bg = isDark ? '#050A10' : '#F3F7FA';
@@ -27,41 +30,32 @@ export default function MiniAppInstall({ route, navigation }) {
   const blue = '#087EFF';
   const green = '#34C759';
 
-  // --- INSTALL LOGIC ---
+  // 🚀 REAL INSTALL LOGIC
   const handleInstall = async () => {
-    if (!currentUser?.uid) {
-      Alert.alert('Login Required', 'Please login to install apps.');
-      return;
-    }
     if (!app) return;
-
     setInstalling(true);
 
     try {
-      // Save app to user's personal installed list in Firestore
-      const installRef = doc(db, 'users', currentUser.uid, 'installed_apps', app.id);
-      await setDoc(installRef, {
-        appId: app.id,
-        name: app.name,
-        icon: app.icon || 'grid',
-        color: app.color || blue,
-        url: app.url,
-        installedAt: serverTimestamp(),
-      });
+      // Call the secure API
+      await MiniAppAPI.installMiniApp(app);
 
       Alert.alert('Success 🎉', `${app.name} has been added to your Nax Portal!`, [
         { 
-          text: 'Open App', 
+          text: 'Open App Now', 
           onPress: () => {
-            navigation.replace('MiniAppViewer', { title: app.name, url: app.url });
+            navigation.replace('MiniAppViewer', { 
+              title: app.name, 
+              url: app.url, 
+              appConfig: app,
+              entryType: app.entryType || (app.url ? 'web' : 'declarative')
+            });
           } 
         },
         { text: 'Later', style: 'cancel', onPress: () => navigation.goBack() }
       ]);
 
     } catch (error) {
-      console.log('Install Error:', error);
-      Alert.alert('Installation Failed', 'Could not install the app. Try again.');
+      Alert.alert('Installation Failed', error.message || 'Could not install the app.');
     } finally {
       setInstalling(false);
     }
@@ -87,7 +81,9 @@ export default function MiniAppInstall({ route, navigation }) {
           <Ionicons name="arrow-back" size={24} color={textMain} />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: textMain }]}>App Details</Text>
-        <TouchableOpacity style={styles.iconBtn}><Ionicons name="share-outline" size={24} color={textMain} /></TouchableOpacity>
+        <TouchableOpacity style={styles.iconBtn}>
+          <Ionicons name="share-outline" size={24} color={textMain} />
+        </TouchableOpacity>
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
@@ -95,16 +91,16 @@ export default function MiniAppInstall({ route, navigation }) {
         {/* APP IDENTITY */}
         <View style={styles.identitySection}>
           <View style={[styles.bigIconBox, { backgroundColor: `${app.color || blue}20` }]}>
-            <Ionicons name={app.icon || 'cube'} size={50} color={app.color || blue} />
+            <Ionicons name={app.icon || 'apps'} size={50} color={app.color || blue} />
           </View>
           <Text style={[styles.appName, { color: textMain }]}>{app.name}</Text>
-          <Text style={[styles.appCreator, { color: blue }]}>by {app.creator || 'Nax Developer'}</Text>
+          <Text style={[styles.appCreator, { color: blue }]}>by {app.creatorId ? 'Nax User' : 'Nax Developer'}</Text>
         </View>
 
         {/* STATS ROW */}
         <View style={[styles.statsRow, { backgroundColor: cardBg, borderColor: border }]}>
           <View style={styles.statBox}>
-            <Text style={[styles.statValue, { color: textMain }]}>4.8 ★</Text>
+            <Text style={[styles.statValue, { color: textMain }]}>★ {app.rating || 'New'}</Text>
             <Text style={[styles.statLabel, { color: textSub }]}>Rating</Text>
           </View>
           <View style={[styles.divider, { backgroundColor: border }]} />
@@ -114,8 +110,8 @@ export default function MiniAppInstall({ route, navigation }) {
           </View>
           <View style={[styles.divider, { backgroundColor: border }]} />
           <View style={styles.statBox}>
-            <Text style={[styles.statValue, { color: textMain }]}>10K+</Text>
-            <Text style={[styles.statLabel, { color: textSub }]}>Users</Text>
+            <Text style={[styles.statValue, { color: textMain }]}>{app.installs || 0}</Text>
+            <Text style={[styles.statLabel, { color: textSub }]}>Installs</Text>
           </View>
         </View>
 
@@ -123,21 +119,24 @@ export default function MiniAppInstall({ route, navigation }) {
         <View style={styles.descSection}>
           <Text style={[styles.sectionTitle, { color: textMain }]}>About this App</Text>
           <Text style={[styles.descText, { color: textSub }]}>
-            {app.desc || 'No description provided by the developer.'}
+            {app.description || app.desc || 'No description provided.'}
           </Text>
         </View>
 
         {/* PERMISSIONS */}
         <View style={[styles.permissionBox, { backgroundColor: cardBg, borderColor: border }]}>
           <Text style={[styles.sectionTitle, { color: textMain, marginBottom: 12 }]}>Required Permissions</Text>
-          <View style={styles.permItem}>
-            <Ionicons name="globe-outline" size={20} color={textSub} />
-            <Text style={[styles.permText, { color: textMain }]}>Network Access</Text>
-          </View>
-          <View style={styles.permItem}>
-            <Ionicons name="shield-checkmark-outline" size={20} color={green} />
-            <Text style={[styles.permText, { color: green }]}>Nax Secure Sandbox</Text>
-          </View>
+          {app.entryType === 'web' ? (
+            <View style={styles.permItem}>
+              <Ionicons name="globe-outline" size={20} color={textSub} />
+              <Text style={[styles.permText, { color: textMain }]}>Network Access (Web View)</Text>
+            </View>
+          ) : (
+            <View style={styles.permItem}>
+              <Ionicons name="shield-checkmark-outline" size={20} color={green} />
+              <Text style={[styles.permText, { color: green }]}>Nax Secure Sandbox (Offline UI)</Text>
+            </View>
+          )}
         </View>
 
       </ScrollView>
@@ -164,7 +163,6 @@ export default function MiniAppInstall({ route, navigation }) {
   );
 }
 
-// --- STYLES ---
 const styles = StyleSheet.create({
   container: { flex: 1 },
   header: { height: 56, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 10, borderBottomWidth: 1, paddingTop: Platform.OS === 'ios' ? 0 : 5 },
