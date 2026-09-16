@@ -3,7 +3,6 @@
 // ==========================================
 import { RTCPeerConnection, RTCIceCandidate } from 'react-native-webrtc';
 
-// 🚀 STUN + FREE TURN SERVER (For Jio/Airtel Bypass)
 const ICE_SERVERS = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
@@ -26,23 +25,14 @@ const ICE_SERVERS = {
   ],
 };
 
-// 🚀 Notice the "type" parameter added here
 export function createPeerConnection(stream, type, onTrack, onIceCandidate) {
   const pc = new RTCPeerConnection(ICE_SERVERS);
 
-  // 🚀 FORCE AUDIO & VIDEO TRANSCEIVERS
-  pc.addTransceiver('audio', { direction: 'sendrecv' });
-  if (type === 'video') {
-    pc.addTransceiver('video', { direction: 'sendrecv' });
-  }
-
+  // 🚀 CLEAN IMPLEMENTATION: No addTransceiver, just addTrack to avoid duplicate ghost tracks
   if (stream) {
-    try {
-      stream.getTracks().forEach((track) => pc.addTrack(track, stream));
-    } catch (e) {
-      console.log("Using fallback addStream", e);
-      pc.addStream(stream);
-    }
+    stream.getTracks().forEach((track) => {
+      pc.addTrack(track, stream);
+    });
   }
 
   pc.ontrack = (event) => {
@@ -51,6 +41,7 @@ export function createPeerConnection(stream, type, onTrack, onIceCandidate) {
     }
   };
 
+  // React Native Fallback
   pc.onaddstream = (event) => {
     if (event.stream) {
       onTrack(event.stream);
@@ -72,7 +63,7 @@ export async function processIceQueue(pc, queueRef) {
     try {
       await pc.addIceCandidate(new RTCIceCandidate(candidateData));
     } catch (error) {
-      console.log('Queue Process Error:', error);
+      console.log('❌ Queue Process Error:', error);
     }
   }
 }
