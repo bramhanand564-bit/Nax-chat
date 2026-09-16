@@ -3,16 +3,12 @@
 // ==========================================
 import { useEffect, useRef, useState } from 'react';
 import { Alert } from 'react-native';
-import { RTCPeerConnection, RTCIceCandidate, RTCSessionDescription, mediaDevices } from 'react-native-webrtc';
+import { RTCSessionDescription, RTCIceCandidate } from 'react-native-webrtc';
 import { collection, doc, onSnapshot, setDoc, updateDoc, addDoc, serverTimestamp, getDoc } from 'firebase/firestore';
 import { auth, db } from '../firebaseConfig';
 
-const ICE_SERVERS = {
-  iceServers: [
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
-  ],
-};
+import useMediaStream from './useMediaStream';
+import { createPeerConnection, processIceQueue } from '../utils/webrtcHelper';
 
 export default function useCallLogic(route, navigation) {
   const params = route?.params || {};
@@ -23,11 +19,13 @@ export default function useCallLogic(route, navigation) {
   const incomingCallId = params.callId || '';
   const currentUser = auth.currentUser;
 
-  const [localStream, setLocalStream] = useState(null);
+  // 🎥 Use our new Media Hook
+  const {
+    localStream, localStreamRef, isMuted, isCameraOff, facing,
+    createLocalStream, toggleMute, toggleCamera, switchCamera, stopLocalStream
+  } = useMediaStream(type);
+
   const [remoteStream, setRemoteStream] = useState(null);
-  const [isMuted, setIsMuted] = useState(false);
-  const [isCameraOff, setIsCameraOff] = useState(type !== 'video');
-  const [facing, setFacing] = useState('front');
   const [status, setStatus] = useState(isCaller ? 'Calling...' : 'Connecting...');
   const [connected, setConnected] = useState(false);
   const [timer, setTimer] = useState(0);
@@ -38,15 +36,11 @@ export default function useCallLogic(route, navigation) {
   const candidateCleanupRef = useRef([]);
   const mountedRef = useRef(true);
   const timerRef = useRef(null);
-  const localStreamRef = useRef(null);
-  const remoteStreamRef = useRef(null);
-  
-  // 🚀 THE MAGIC QUEUE (Fixes "Connecting..." issue)
-  const iceCandidateQueue = useRef([]); 
+  const iceCandidateQueue = useRef([]);
 
   useEffect(() => {
     if (!connected) return undefined;
-    timerRef.current = setInterval(() => setTimer((value) => value + 1), 1000);
+    timerRef.current = setInterval(() => setTimer((v) => v + 1), 1000);
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [connected]);
 
@@ -56,101 +50,49 @@ export default function useCallLogic(route, navigation) {
     return () => { mountedRef.current = false; cleanupCall(false); };
   }, []);
 
-  // 🚀 1. CAMERA & MIC ACCESS
-  const createLocalStream = async () => {
-    const constraints = {
-      audio: true,
-      video: type === 'video' ? { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 24 } } : false,
-    };
-    try {
-      const stream = await mediaDevices.getUserMedia(constraints);
-      localStreamRef.current = stream;
-      if (mountedRef.current) setLocalStream(stream);
-      return stream;
-    } catch (err) {
-      console.log("Media Access Error:", err);
-      Alert.alert("Permission Denied", "Camera ya Mic ki permission nahi mili.");
-      throw err;
-    }
-  };
-
-  const createPeer = (stream) => {
-    const pc = new RTCPeerConnection(ICE_SERVERS);
-    peerRef.current = pc;
-
-    // 🚀 2. SEND LOCAL MEDIA (Fallback Supported for React Native)
-    if (stream) {
-      try {
-        stream.getTracks().forEach((track) => pc.addTrack(track, stream));
-      } catch (e) {
-        console.log("Using fallback addStream", e);
-        pc.addStream(stream);
-      }
-    }
-
-    // 🚀 3. RECEIVE REMOTE MEDIA (Modern)
-    pc.ontrack = (event) => {
-      if (event.streams && event.streams[0]) {
-        remoteStreamRef.current = event.streams[0];
+  const initializePeer = (stream) => {
+    const pc = createPeerConnection(
+      stream,
+      (remote) => {
         if (mountedRef.current) {
-          setRemoteStream(event.streams[0]);
+          setRemoteStream(remote);
           setConnected(true);
           setBusy(false);
           setStatus('Connected');
         }
+      },
+      async (candidate) => {
+        if (!callRef.current) return;
+        try {
+          const side = isCaller ? 'offerCandidates' : 'answerCandidates';
+          await addDoc(collection(db, 'calls', callRef.current, side), candidate.toJSON());
+        } catch (error) { console.log('ICE error:', error); }
       }
-    };
-
-    // 🚀 4. RECEIVE REMOTE MEDIA (Lifesaver for Mobile)
-    pc.onaddstream = (event) => {
-      if (event.stream) {
-        remoteStreamRef.current = event.stream;
-        if (mountedRef.current) {
-          setRemoteStream(event.stream);
-          setConnected(true);
-          setBusy(false);
-          setStatus('Connected');
-        }
-      }
-    };
-
-    pc.onicecandidate = async (event) => {
-      if (!event.candidate || !callRef.current) return;
-      try {
-        const side = isCaller ? 'offerCandidates' : 'answerCandidates';
-        await addDoc(collection(db, 'calls', callRef.current, side), event.candidate.toJSON());
-      } catch (error) { console.log('ICE error:', error); }
-    };
+    );
 
     pc.onconnectionstatechange = () => {
       const state = pc.connectionState;
-      if (state === 'connected' && mountedRef.current) { 
-        setConnected(true); setBusy(false); setStatus('Connected'); 
+      if (state === 'connected' && mountedRef.current) {
+        setConnected(true); setBusy(false); setStatus('Connected');
       }
       if (state === 'disconnected' && mountedRef.current) setStatus('Connection lost');
       if (state === 'failed' && mountedRef.current) { setStatus('Connection failed'); setBusy(false); }
     };
-    return pc;
-  };
 
-  const processIceQueue = async (pc) => {
-    while (iceCandidateQueue.current.length > 0) {
-      const candidate = iceCandidateQueue.current.shift();
-      try { await pc.addIceCandidate(candidate); } 
-      catch (error) { console.log('Queue Process Error:', error); }
-    }
+    peerRef.current = pc;
+    return pc;
   };
 
   const listenForRemoteCandidates = (callId, pc, collectionName) => {
     const unsubscribe = onSnapshot(collection(db, 'calls', callId, collectionName), (snapshot) => {
       snapshot.docChanges().forEach(async (change) => {
         if (change.type !== 'added') return;
-        try { 
-          const candidate = new RTCIceCandidate(change.doc.data());
+        try {
+          const candidateData = change.doc.data();
           if (!pc.currentRemoteDescription) {
-            iceCandidateQueue.current.push(candidate);
+            iceCandidateQueue.current.push(candidateData);
           } else {
-            await pc.addIceCandidate(candidate);
+            await pc.addIceCandidate(new RTCIceCandidate(candidateData));
           }
         } catch (error) {}
       });
@@ -171,9 +113,9 @@ export default function useCallLogic(route, navigation) {
     if (!friendId) throw new Error('Friend ID missing.');
     const callDoc = doc(collection(db, 'calls'));
     callRef.current = callDoc.id;
-    
+
     const stream = await createLocalStream();
-    const pc = createPeer(stream);
+    const pc = initializePeer(stream);
 
     listenForRemoteCandidates(callDoc.id, pc, 'answerCandidates');
 
@@ -199,10 +141,10 @@ export default function useCallLogic(route, navigation) {
       if (data.status === 'rejected') { Alert.alert('Rejected', `${name} declined.`); navigation.goBack(); return; }
       if (data.status === 'ended') { navigation.goBack(); return; }
       if (!data.answer || pc.currentRemoteDescription) return;
-      
+
       try {
         await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
-        await processIceQueue(pc);
+        await processIceQueue(pc, iceCandidateQueue);
         if (mountedRef.current) setStatus('Connecting...');
       } catch (error) {}
     });
@@ -213,7 +155,7 @@ export default function useCallLogic(route, navigation) {
     if (!incomingCallId) throw new Error('Call ID missing.');
     callRef.current = incomingCallId;
     setStatus('Incoming...'); setBusy(false);
-    
+
     const callDoc = doc(db, 'calls', incomingCallId);
     const unsubscribe = onSnapshot(callDoc, (snapshot) => {
       const data = snapshot.data();
@@ -231,15 +173,15 @@ export default function useCallLogic(route, navigation) {
     const callDoc = doc(db, 'calls', incomingCallId);
     try {
       const stream = await createLocalStream();
-      const pc = createPeer(stream);
-      
-      listenForRemoteCandidates(incomingCallId, pc, 'offerCandidates'); 
+      const pc = initializePeer(stream);
+
+      listenForRemoteCandidates(incomingCallId, pc, 'offerCandidates');
 
       const snap = await getDoc(callDoc);
       const data = snap.data();
       if (data && data.offer) {
         await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
-        await processIceQueue(pc);
+        await processIceQueue(pc, iceCandidateQueue);
 
         const answer = await pc.createAnswer({ offerToReceiveAudio: true, offerToReceiveVideo: type === 'video' });
         await pc.setLocalDescription(answer);
@@ -263,27 +205,6 @@ export default function useCallLogic(route, navigation) {
     } catch (error) { Alert.alert('Call Error', error?.message, [{ text: 'OK', onPress: () => navigation.goBack() }]); }
   };
 
-  const toggleMute = () => {
-    if (!localStreamRef.current) return;
-    localStreamRef.current.getAudioTracks().forEach(track => track.enabled = !track.enabled);
-    setIsMuted(v => !v);
-  };
-
-  const toggleCamera = () => {
-    if (type !== 'video' || !localStreamRef.current) return;
-    localStreamRef.current.getVideoTracks().forEach(track => track.enabled = !track.enabled);
-    setIsCameraOff(v => !v);
-  };
-
-  const switchCamera = () => {
-    if (!localStreamRef.current) return;
-    const videoTrack = localStreamRef.current.getVideoTracks()[0];
-    if (videoTrack && typeof videoTrack._switchCamera === 'function') {
-      videoTrack._switchCamera();
-      setFacing(v => v === 'front' ? 'back' : 'front');
-    }
-  };
-
   const endCall = async () => {
     try { if (callRef.current) await updateDoc(doc(db, 'calls', callRef.current), { status: 'ended', endedAt: serverTimestamp() }); } catch (error) {}
     cleanupCall(true);
@@ -293,8 +214,9 @@ export default function useCallLogic(route, navigation) {
     candidateCleanupRef.current.forEach((unsub) => { try { unsub(); } catch {} });
     candidateCleanupRef.current = [];
     if (timerRef.current) clearInterval(timerRef.current);
-    if (localStreamRef.current) localStreamRef.current.getTracks().forEach(track => { try { track.stop(); } catch {} });
-    localStreamRef.current = null;
+    
+    stopLocalStream();
+
     if (peerRef.current) { try { peerRef.current.close(); } catch {} }
     peerRef.current = null;
     if (goBack) navigation.goBack();
