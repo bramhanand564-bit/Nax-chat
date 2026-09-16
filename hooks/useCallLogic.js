@@ -3,268 +3,1333 @@
 // ==========================================
 import { useEffect, useRef, useState } from 'react';
 import { Alert } from 'react-native';
-import { RTCSessionDescription, RTCIceCandidate } from 'react-native-webrtc';
-import { collection, doc, onSnapshot, setDoc, updateDoc, addDoc, serverTimestamp, getDoc } from 'firebase/firestore';
-import { auth, db } from '../firebaseConfig';
+import {
+  RTCSessionDescription,
+  RTCIceCandidate,
+} from 'react-native-webrtc';
 
+import {
+  collection,
+  doc,
+  onSnapshot,
+  setDoc,
+  updateDoc,
+  addDoc,
+  serverTimestamp,
+  getDoc,
+} from 'firebase/firestore';
+
+import { auth, db } from '../firebaseConfig';
 import useMediaStream from './useMediaStream';
-import { createPeerConnection, processIceQueue } from '../utils/webrtcHelper';
+import {
+  createPeerConnection,
+  processIceQueue,
+} from '../utils/webrtcHelper';
 
 export default function useCallLogic(route, navigation) {
   const params = route?.params || {};
+
   const type = params.type === 'voice' ? 'voice' : 'video';
   const name = params.name || 'Nax User';
-  const friendId = params.friendId || params.receiverId || '';
+
+  const friendId =
+    params.friendId ||
+    params.receiverId ||
+    '';
+
   const isCaller = params.isCaller === true;
   const incomingCallId = params.callId || '';
+
   const currentUser = auth.currentUser;
 
+  // ==========================================
+  // MEDIA
+  // ==========================================
   const {
-    localStream, localStreamRef, isMuted, isCameraOff, facing,
-    createLocalStream, toggleMute, toggleCamera, switchCamera, stopLocalStream
+    localStream,
+    localStreamRef,
+    isMuted,
+    isCameraOff,
+    facing,
+    createLocalStream,
+    toggleMute,
+    toggleCamera,
+    switchCamera,
+    stopLocalStream,
   } = useMediaStream(type);
 
+  // ==========================================
+  // UI STATE
+  // ==========================================
   const [remoteStream, setRemoteStream] = useState(null);
-  const [status, setStatus] = useState(isCaller ? 'Calling...' : 'Connecting...');
+
+  const [status, setStatus] = useState(
+    isCaller ? 'Calling...' : 'Incoming...'
+  );
+
   const [connected, setConnected] = useState(false);
   const [timer, setTimer] = useState(0);
   const [busy, setBusy] = useState(true);
 
+  // ==========================================
+  // REFS
+  // ==========================================
   const peerRef = useRef(null);
   const callRef = useRef(null);
-  const candidateCleanupRef = useRef([]);
+
+  const cleanupListenersRef = useRef([]);
+
   const mountedRef = useRef(true);
+  const cleanupDoneRef = useRef(false);
+  const navigationHandledRef = useRef(false);
+
   const timerRef = useRef(null);
+
+  // ICE candidates received before remote SDP
   const iceCandidateQueue = useRef([]);
 
+  // Prevent concurrent ICE candidate processing
+  const iceProcessingRef = useRef(Promise.resolve());
+
+  // Prevent answer from being applied more than once
+  const answerAppliedRef = useRef(false);
+
+  // Prevent offer from being processed more than once
+  const offerProcessedRef = useRef(false);
+
+  // ==========================================
+  // TIMER
+  // ==========================================
   useEffect(() => {
-    if (!connected) return undefined;
-    timerRef.current = setInterval(() => setTimer((v) => v + 1), 1000);
-    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+    if (!connected) {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+
+      return undefined;
+    }
+
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+    }
+
+    timerRef.current = setInterval(() => {
+      if (mountedRef.current) {
+        setTimer((value) => value + 1);
+      }
+    }, 1000);
+
+    return () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    };
   }, [connected]);
 
+  // ==========================================
+  // MAIN CALL START
+  // ==========================================
   useEffect(() => {
     mountedRef.current = true;
+
     startCall();
-    return () => { mountedRef.current = false; cleanupCall(false); };
+
+    return () => {
+      mountedRef.current = false;
+      cleanupCall(false);
+    };
   }, []);
 
+  // ==========================================
+  // SAFE NAVIGATION
+  // ==========================================
+  const safeGoBack = () => {
+    if (navigationHandledRef.current) {
+      return;
+    }
+
+    navigationHandledRef.current = true;
+
+    try {
+      navigation.goBack();
+    } catch (error) {
+      console.log('❌ Navigation Error:', error);
+    }
+  };
+
+  // ==========================================
+  // ADD REMOTE ICE CANDIDATE
+  // ==========================================
+  const addRemoteIceCandidate = async (pc, candidateData) => {
+    if (!pc || !candidateData) {
+      return;
+    }
+
+    iceProcessingRef.current = iceProcessingRef.current
+      .catch(() => {})
+      .then(async () => {
+        try {
+          if (!pc.remoteDescription) {
+            iceCandidateQueue.current.push(candidateData);
+            return;
+          }
+
+          await pc.addIceCandidate(
+            new RTCIceCandidate(candidateData)
+          );
+        } catch (error) {
+          console.log(
+            '❌ Remote ICE Candidate Error:',
+            error
+          );
+        }
+      });
+
+    return iceProcessingRef.current;
+  };
+
+  // ==========================================
+  // INITIALIZE WEBRTC PEER
+  // ==========================================
   const initializePeer = (stream) => {
+    if (!stream) {
+      throw new Error('Local media stream not available.');
+    }
+
     const pc = createPeerConnection(
       stream,
       type,
+
+      // ----------------------------------------
+      // REMOTE STREAM
+      // ----------------------------------------
       (remote) => {
-        if (mountedRef.current) {
-          setRemoteStream(remote);
+        console.log('🎥 Remote stream received');
+
+        if (!mountedRef.current || !remote) {
+          return;
         }
+
+        setRemoteStream(remote);
+        setBusy(false);
       },
+
+      // ----------------------------------------
+      // LOCAL ICE CANDIDATE
+      // ----------------------------------------
       async (candidate) => {
-        if (!callRef.current) return;
+        const callId = callRef.current;
+
+        if (!callId || !candidate) {
+          return;
+        }
+
         try {
-          const side = isCaller ? 'offerCandidates' : 'answerCandidates';
-          await addDoc(collection(db, 'calls', callRef.current, side), candidate.toJSON());
-        } catch (error) { 
-          console.log('❌ ICE Firebase Write Error:', error); 
+          const collectionName = isCaller
+            ? 'offerCandidates'
+            : 'answerCandidates';
+
+          await addDoc(
+            collection(
+              db,
+              'calls',
+              callId,
+              collectionName
+            ),
+            candidate.toJSON()
+          );
+
+          console.log(
+            `🧊 Local ICE candidate saved: ${collectionName}`
+          );
+        } catch (error) {
+          console.log(
+            '❌ Firebase ICE Write Error:',
+            error
+          );
         }
       }
     );
 
-    // 🚀 ACTUAL WEBRTC CONNECTION STATE (This controls the UI now)
+    // ========================================
+    // ICE CONNECTION STATE
+    // ========================================
     pc.oniceconnectionstatechange = () => {
       const state = pc.iceConnectionState;
-      console.log("🧊 ICE State Changed:", state);
-      
-      if ((state === 'connected' || state === 'completed') && mountedRef.current) {
-        setConnected(true); 
-        setBusy(false); 
-        setStatus('Connected');
+
+      console.log(
+        '🧊 ICE Connection State:',
+        state
+      );
+
+      if (!mountedRef.current) {
+        return;
       }
-      if (state === 'disconnected' && mountedRef.current) setStatus('Connection lost');
-      if (state === 'failed' && mountedRef.current) { setStatus('Connection failed'); setBusy(false); }
+
+      if (
+        state === 'connected' ||
+        state === 'completed'
+      ) {
+        setConnected(true);
+        setBusy(false);
+        setStatus('Connected');
+
+        // Tell the other side that WebRTC is actually connected.
+        updateConnectedStatus();
+      } else if (
+        state === 'checking'
+      ) {
+        setBusy(true);
+        setStatus('Connecting...');
+      } else if (
+        state === 'disconnected'
+      ) {
+        setStatus('Reconnecting...');
+      } else if (
+        state === 'failed'
+      ) {
+        setConnected(false);
+        setBusy(false);
+        setStatus('Connection failed');
+
+        console.log(
+          '❌ WebRTC ICE connection failed'
+        );
+      } else if (
+        state === 'closed'
+      ) {
+        setConnected(false);
+        setStatus('Call ended');
+      }
+    };
+
+    // ========================================
+    // PEER CONNECTION STATE
+    // ========================================
+    pc.onconnectionstatechange = () => {
+      const state = pc.connectionState;
+
+      console.log(
+        '📡 Peer Connection State:',
+        state
+      );
+
+      if (!mountedRef.current) {
+        return;
+      }
+
+      if (state === 'connected') {
+        setConnected(true);
+        setBusy(false);
+        setStatus('Connected');
+
+        updateConnectedStatus();
+      }
+
+      if (state === 'connecting') {
+        setBusy(true);
+        setStatus('Connecting...');
+      }
+
+      if (state === 'disconnected') {
+        setStatus('Reconnecting...');
+      }
+
+      if (state === 'failed') {
+        setBusy(false);
+        setStatus('Connection failed');
+      }
+    };
+
+    // ========================================
+    // SIGNALING STATE LOG
+    // ========================================
+    pc.onsignalingstatechange = () => {
+      console.log(
+        '📶 Signaling State:',
+        pc.signalingState
+      );
     };
 
     peerRef.current = pc;
+
     return pc;
   };
 
-  const listenForRemoteCandidates = (callId, pc, collectionName) => {
-    const unsubscribe = onSnapshot(collection(db, 'calls', callId, collectionName), (snapshot) => {
-      snapshot.docChanges().forEach(async (change) => {
-        if (change.type !== 'added') return;
-        try {
-          const candidateData = change.doc.data();
-          if (!pc.remoteDescription) {
-            iceCandidateQueue.current.push(candidateData);
-          } else {
-            await pc.addIceCandidate(new RTCIceCandidate(candidateData));
-          }
-        } catch (error) {
-          console.log('❌ Remote ICE Add Error:', error);
-        }
-      });
-    });
-    candidateCleanupRef.current.push(unsubscribe);
-  };
+  // ==========================================
+  // WRITE CONNECTED STATUS
+  // ==========================================
+  const updateConnectedStatus = async () => {
+    const callId = callRef.current;
 
-  const listenForCallStatus = (callId) => {
-    const unsubscribe = onSnapshot(doc(db, 'calls', callId), (snapshot) => {
-      const data = snapshot.data();
-      if (!data) return;
-      if (data.status === 'rejected' || data.status === 'ended') navigation.goBack();
-    });
-    candidateCleanupRef.current.push(unsubscribe);
+    if (!callId) {
+      return;
+    }
+
+    try {
+      await updateDoc(
+        doc(db, 'calls', callId),
+        {
+          status: 'connected',
+          connectedAt: serverTimestamp(),
+        }
+      );
+    } catch (error) {
+      // Call may already be ended.
+      console.log(
+        'ℹ️ Connected status update:',
+        error?.message || error
+      );
+    }
   };
 
   // ==========================================
-  // CALLER LOGIC (Strict Order Enforced)
+  // LISTEN REMOTE ICE CANDIDATES
+  // ==========================================
+  const listenForRemoteCandidates = (
+    callId,
+    pc,
+    collectionName
+  ) => {
+    if (!callId || !pc) {
+      return;
+    }
+
+    const candidatesRef = collection(
+      db,
+      'calls',
+      callId,
+      collectionName
+    );
+
+    const unsubscribe = onSnapshot(
+      candidatesRef,
+      (snapshot) => {
+        snapshot.docChanges().forEach((change) => {
+          if (change.type !== 'added') {
+            return;
+          }
+
+          const candidateData = change.doc.data();
+
+          addRemoteIceCandidate(
+            pc,
+            candidateData
+          );
+        });
+      },
+      (error) => {
+        console.log(
+          '❌ ICE Listener Error:',
+          error
+        );
+      }
+    );
+
+    cleanupListenersRef.current.push(
+      unsubscribe
+    );
+
+    console.log(
+      `👂 Listening for ${collectionName}`
+    );
+  };
+
+  // ==========================================
+  // PROCESS QUEUED ICE CANDIDATES
+  // ==========================================
+  const processQueuedIceCandidates = async (pc) => {
+    if (!pc || !pc.remoteDescription) {
+      return;
+    }
+
+    await processIceQueue(
+      pc,
+      iceCandidateQueue
+    );
+
+    console.log(
+      '🧊 Queued ICE candidates processed'
+    );
+  };
+
+  // ==========================================
+  // LISTEN CALL STATUS
+  // ==========================================
+  const listenForCallStatus = (callId) => {
+    const callDoc = doc(
+      db,
+      'calls',
+      callId
+    );
+
+    const unsubscribe = onSnapshot(
+      callDoc,
+      (snapshot) => {
+        const data = snapshot.data();
+
+        if (!data || !mountedRef.current) {
+          return;
+        }
+
+        // --------------------------------------
+        // REJECTED
+        // --------------------------------------
+        if (data.status === 'rejected') {
+          if (isCaller) {
+            Alert.alert(
+              'Call Declined',
+              `${name} declined the call.`,
+              [
+                {
+                  text: 'OK',
+                  onPress: () => {
+                    cleanupCall(true);
+                  },
+                },
+              ],
+              {
+                cancelable: false,
+              }
+            );
+          } else {
+            cleanupCall(true);
+          }
+
+          return;
+        }
+
+        // --------------------------------------
+        // ENDED
+        // --------------------------------------
+        if (data.status === 'ended') {
+          if (mountedRef.current) {
+            setStatus('Call ended');
+          }
+
+          cleanupCall(true);
+          return;
+        }
+
+        // --------------------------------------
+        // ANSWERED
+        // --------------------------------------
+        if (
+          data.status === 'answered' &&
+          mountedRef.current &&
+          !connected
+        ) {
+          setBusy(false);
+          setStatus('Connecting...');
+        }
+
+        // --------------------------------------
+        // CONNECTED
+        // --------------------------------------
+        if (
+          data.status === 'connected' &&
+          mountedRef.current
+        ) {
+          setConnected(true);
+          setBusy(false);
+          setStatus('Connected');
+        }
+      },
+      (error) => {
+        console.log(
+          '❌ Call Status Listener Error:',
+          error
+        );
+      }
+    );
+
+    cleanupListenersRef.current.push(
+      unsubscribe
+    );
+  };
+
+  // ==========================================
+  // OUTGOING CALL
   // ==========================================
   const startOutgoingCall = async () => {
-    if (!friendId) throw new Error('Friend ID missing.');
-    const callDoc = doc(collection(db, 'calls'));
+    if (!friendId) {
+      throw new Error('Friend ID missing.');
+    }
+
+    if (!currentUser?.uid) {
+      throw new Error('Login required.');
+    }
+
+    cleanupDoneRef.current = false;
+    navigationHandledRef.current = false;
+
+    // ----------------------------------------
+    // CREATE CALL DOCUMENT FIRST
+    // ----------------------------------------
+    const callDoc = doc(
+      collection(db, 'calls')
+    );
+
     callRef.current = callDoc.id;
 
-    // 1. Create Media Stream
-    const stream = await createLocalStream();
+    console.log(
+      '📞 Creating outgoing call:',
+      callDoc.id
+    );
 
-    // 🚀 FIX 1: WRITE PARENT DOCUMENT TO FIRESTORE FIRST (Before ICE generation starts)
+    // IMPORTANT:
+    // Firebase parent call document is created BEFORE
+    // WebRTC starts generating ICE candidates.
     await setDoc(callDoc, {
-      callerId: currentUser.uid, receiverId: friendId, callerName: currentUser.displayName || 'User',
-      receiverName: name, type, status: 'ringing', createdAt: serverTimestamp(),
+      callerId: currentUser.uid,
+      receiverId: friendId,
+
+      callerName:
+        currentUser.displayName || 'User',
+
+      receiverName: name,
+
+      type,
+
+      status: 'ringing',
+
+      createdAt: serverTimestamp(),
     });
 
-    // 2. Initialize Peer
+    // ----------------------------------------
+    // LISTEN CALL STATUS EARLY
+    // ----------------------------------------
+    listenForCallStatus(
+      callDoc.id
+    );
+
+    // ----------------------------------------
+    // CREATE LOCAL CAMERA + MICROPHONE
+    // ----------------------------------------
+    const stream =
+      await createLocalStream();
+
+    if (!stream) {
+      throw new Error(
+        'Unable to access camera/microphone.'
+      );
+    }
+
+    console.log(
+      '🎥 Local camera + microphone ready'
+    );
+
+    // ----------------------------------------
+    // CREATE PEER
+    // ----------------------------------------
     const pc = initializePeer(stream);
 
-    // 3. Start Listening for Answer Candidates
-    listenForRemoteCandidates(callDoc.id, pc, 'answerCandidates');
+    // ----------------------------------------
+    // LISTEN ANSWER ICE
+    // ----------------------------------------
+    listenForRemoteCandidates(
+      callDoc.id,
+      pc,
+      'answerCandidates'
+    );
 
-    // 4. Create Offer & Set Local Description (THIS triggers ICE candidate gathering)
-    const offer = await pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: type === 'video' });
-    await pc.setLocalDescription(offer);
-
-    // 5. Save Offer to Firebase
-    await updateDoc(callDoc, { offer: { type: offer.type, sdp: offer.sdp } });
-
-    listenForAnswer(callDoc.id, pc);
-    listenForCallStatus(callDoc.id);
-
-    if (mountedRef.current) { setBusy(false); setStatus('Ringing...'); }
-  };
-
-  const listenForAnswer = (callId, pc) => {
-    const unsubscribe = onSnapshot(doc(db, 'calls', callId), async (snapshot) => {
-      const data = snapshot.data();
-      if (!data) return;
-      if (data.status === 'rejected') { Alert.alert('Rejected', `${name} declined.`); navigation.goBack(); return; }
-      if (data.status === 'ended') { navigation.goBack(); return; }
-      if (!data.answer || pc.remoteDescription) return;
-
-      try {
-        await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
-        await processIceQueue(pc, iceCandidateQueue);
-      } catch (error) {
-        console.log('❌ Answer Processing Error:', error);
-      }
+    // ----------------------------------------
+    // CREATE OFFER
+    // ----------------------------------------
+    const offer = await pc.createOffer({
+      offerToReceiveAudio: true,
+      offerToReceiveVideo:
+        type === 'video',
     });
-    candidateCleanupRef.current.push(unsubscribe);
+
+    await pc.setLocalDescription(
+      offer
+    );
+
+    console.log(
+      '📤 Local offer created'
+    );
+
+    // ----------------------------------------
+    // SAVE OFFER
+    // ----------------------------------------
+    await updateDoc(callDoc, {
+      offer: {
+        type: offer.type,
+        sdp: offer.sdp,
+      },
+    });
+
+    console.log(
+      '📤 Offer saved to Firebase'
+    );
+
+    // ----------------------------------------
+    // LISTEN ANSWER
+    // ----------------------------------------
+    listenForAnswer(
+      callDoc.id,
+      pc
+    );
+
+    if (mountedRef.current) {
+      setBusy(false);
+      setStatus('Ringing...');
+    }
   };
 
   // ==========================================
-  // RECEIVER LOGIC (Strict Order Enforced)
+  // LISTEN FOR ANSWER
+  // ==========================================
+  const listenForAnswer = (
+    callId,
+    pc
+  ) => {
+    const callDoc = doc(
+      db,
+      'calls',
+      callId
+    );
+
+    const unsubscribe = onSnapshot(
+      callDoc,
+      async (snapshot) => {
+        const data =
+          snapshot.data();
+
+        if (
+          !data ||
+          !mountedRef.current ||
+          !pc
+        ) {
+          return;
+        }
+
+        // --------------------------------------
+        // REJECTED
+        // --------------------------------------
+        if (
+          data.status === 'rejected'
+        ) {
+          return;
+        }
+
+        // --------------------------------------
+        // ENDED
+        // --------------------------------------
+        if (
+          data.status === 'ended'
+        ) {
+          return;
+        }
+
+        // --------------------------------------
+        // NO ANSWER YET
+        // --------------------------------------
+        if (!data.answer) {
+          return;
+        }
+
+        // --------------------------------------
+        // ANSWER ALREADY APPLIED
+        // --------------------------------------
+        if (
+          answerAppliedRef.current ||
+          pc.remoteDescription
+        ) {
+          return;
+        }
+
+        try {
+          answerAppliedRef.current = true;
+
+          console.log(
+            '📥 Applying remote answer'
+          );
+
+          await pc.setRemoteDescription(
+            new RTCSessionDescription(
+              data.answer
+            )
+          );
+
+          console.log(
+            '✅ Remote answer applied'
+          );
+
+          // ------------------------------------
+          // ADD ICE RECEIVED BEFORE ANSWER
+          // ------------------------------------
+          await processQueuedIceCandidates(
+            pc
+          );
+
+          if (mountedRef.current) {
+            setStatus('Connecting...');
+          }
+        } catch (error) {
+          answerAppliedRef.current = false;
+
+          console.log(
+            '❌ Answer Processing Error:',
+            error
+          );
+        }
+      },
+      (error) => {
+        console.log(
+          '❌ Answer Listener Error:',
+          error
+        );
+      }
+    );
+
+    cleanupListenersRef.current.push(
+      unsubscribe
+    );
+  };
+
+  // ==========================================
+  // INCOMING CALL
   // ==========================================
   const startIncomingCall = async () => {
-    if (!incomingCallId) throw new Error('Call ID missing.');
-    callRef.current = incomingCallId;
-    setStatus('Incoming...'); setBusy(false);
+    if (!incomingCallId) {
+      throw new Error(
+        'Call ID missing.'
+      );
+    }
 
-    const callDoc = doc(db, 'calls', incomingCallId);
-    const unsubscribe = onSnapshot(callDoc, (snapshot) => {
-      const data = snapshot.data();
-      if (!data) return;
-      if (data.status === 'ended' || data.status === 'rejected') {
-        unsubscribe();
-        if (mountedRef.current) { setStatus('Call ended'); cleanupCall(true); }
+    callRef.current =
+      incomingCallId;
+
+    cleanupDoneRef.current = false;
+    navigationHandledRef.current = false;
+
+    if (mountedRef.current) {
+      setStatus('Incoming...');
+      setBusy(false);
+    }
+
+    const callDoc = doc(
+      db,
+      'calls',
+      incomingCallId
+    );
+
+    // ----------------------------------------
+    // LISTEN INCOMING CALL STATUS
+    // ----------------------------------------
+    const unsubscribe = onSnapshot(
+      callDoc,
+      (snapshot) => {
+        const data =
+          snapshot.data();
+
+        if (
+          !data ||
+          !mountedRef.current
+        ) {
+          return;
+        }
+
+        if (
+          data.status === 'ended' ||
+          data.status === 'rejected'
+        ) {
+          if (mountedRef.current) {
+            setStatus('Call ended');
+          }
+
+          cleanupCall(true);
+          return;
+        }
+
+        if (
+          data.status === 'answered'
+        ) {
+          setStatus('Connecting...');
+        }
+
+        if (
+          data.status === 'connected'
+        ) {
+          setConnected(true);
+          setBusy(false);
+          setStatus('Connected');
+        }
+      },
+      (error) => {
+        console.log(
+          '❌ Incoming Call Listener Error:',
+          error
+        );
       }
-    });
-    candidateCleanupRef.current.push(unsubscribe);
+    );
+
+    cleanupListenersRef.current.push(
+      unsubscribe
+    );
   };
 
+  // ==========================================
+  // ACCEPT INCOMING CALL
+  // ==========================================
   const acceptCall = async () => {
-    setStatus('Connecting...');
-    const callDoc = doc(db, 'calls', incomingCallId);
-    
-    // 🚀 FIX 2: SEPARATE STATUS. We just say 'answered', not 'connected'. WebRTC handles 'connected'.
-    await updateDoc(callDoc, { status: 'answered' });
+    if (!incomingCallId) {
+      return;
+    }
+
+    if (peerRef.current) {
+      console.log(
+        '⚠️ Peer already exists.'
+      );
+      return;
+    }
 
     try {
-      const stream = await createLocalStream();
-      const pc = initializePeer(stream);
+      setBusy(true);
+      setStatus('Connecting...');
 
-      listenForRemoteCandidates(incomingCallId, pc, 'offerCandidates');
+      const callDoc = doc(
+        db,
+        'calls',
+        incomingCallId
+      );
 
-      const snap = await getDoc(callDoc);
-      const data = snap.data();
-      if (data && data.offer) {
-        // Set Remote Description FIRST
-        await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
-        await processIceQueue(pc, iceCandidateQueue);
+      // ----------------------------------------
+      // MARK AS ANSWERED
+      // ----------------------------------------
+      await updateDoc(
+        callDoc,
+        {
+          status: 'answered',
+          answeredAt: serverTimestamp(),
+        }
+      );
 
-        // Create Answer & Set Local Description (Triggers ICE gathering)
-        const answer = await pc.createAnswer({ offerToReceiveAudio: true, offerToReceiveVideo: type === 'video' });
-        await pc.setLocalDescription(answer);
-        
-        // Save Answer to Firebase
-        await updateDoc(callDoc, { answer: { type: answer.type, sdp: answer.sdp } });
+      // ----------------------------------------
+      // GET CAMERA + MICROPHONE
+      // ----------------------------------------
+      const stream =
+        await createLocalStream();
+
+      if (!stream) {
+        throw new Error(
+          'Unable to access camera/microphone.'
+        );
       }
-    } catch (error) { 
-      console.log('❌ Accept Call Error:', error); 
-      cleanupCall(true); 
+
+      console.log(
+        '🎥 Incoming local camera + microphone ready'
+      );
+
+      // ----------------------------------------
+      // CREATE PEER
+      // ----------------------------------------
+      const pc =
+        initializePeer(stream);
+
+      // ----------------------------------------
+      // LISTEN CALLER ICE
+      // ----------------------------------------
+      listenForRemoteCandidates(
+        incomingCallId,
+        pc,
+        'offerCandidates'
+      );
+
+      // ----------------------------------------
+      // GET CALL DOCUMENT
+      // ----------------------------------------
+      const snap =
+        await getDoc(callDoc);
+
+      const data =
+        snap.data();
+
+      if (!data) {
+        throw new Error(
+          'Call no longer exists.'
+        );
+      }
+
+      if (!data.offer) {
+        throw new Error(
+          'Caller offer not found.'
+        );
+      }
+
+      if (
+        offerProcessedRef.current
+      ) {
+        return;
+      }
+
+      offerProcessedRef.current =
+        true;
+
+      // ----------------------------------------
+      // SET REMOTE OFFER
+      // ----------------------------------------
+      console.log(
+        '📥 Applying caller offer'
+      );
+
+      await pc.setRemoteDescription(
+        new RTCSessionDescription(
+          data.offer
+        )
+      );
+
+      console.log(
+        '✅ Caller offer applied'
+      );
+
+      // ----------------------------------------
+      // PROCESS ICE RECEIVED BEFORE OFFER
+      // ----------------------------------------
+      await processQueuedIceCandidates(
+        pc
+      );
+
+      // ----------------------------------------
+      // CREATE ANSWER
+      // ----------------------------------------
+      const answer =
+        await pc.createAnswer({
+          offerToReceiveAudio: true,
+          offerToReceiveVideo:
+            type === 'video',
+        });
+
+      // ----------------------------------------
+      // SET LOCAL ANSWER
+      // ----------------------------------------
+      await pc.setLocalDescription(
+        answer
+      );
+
+      console.log(
+        '📤 Local answer created'
+      );
+
+      // ----------------------------------------
+      // SAVE ANSWER
+      // ----------------------------------------
+      await updateDoc(
+        callDoc,
+        {
+          answer: {
+            type: answer.type,
+            sdp: answer.sdp,
+          },
+        }
+      );
+
+      console.log(
+        '📤 Answer saved to Firebase'
+      );
+
+      if (mountedRef.current) {
+        setBusy(false);
+        setStatus('Connecting...');
+      }
+    } catch (error) {
+      console.log(
+        '❌ Accept Call Error:',
+        error
+      );
+
+      if (mountedRef.current) {
+        setBusy(false);
+        setStatus('Call failed');
+      }
+
+      try {
+        await updateDoc(
+          doc(
+            db,
+            'calls',
+            incomingCallId
+          ),
+          {
+            status: 'ended',
+            endedAt: serverTimestamp(),
+          }
+        );
+      } catch (updateError) {
+        console.log(
+          '❌ Failed to update call after accept error:',
+          updateError
+        );
+      }
+
+      cleanupCall(true);
     }
   };
 
+  // ==========================================
+  // DECLINE CALL
+  // ==========================================
   const declineCall = async () => {
+    const callId =
+      callRef.current ||
+      incomingCallId;
+
     try {
-      if (callRef.current) await updateDoc(doc(db, 'calls', callRef.current), { status: 'rejected', endedAt: serverTimestamp() });
+      if (callId) {
+        await updateDoc(
+          doc(db, 'calls', callId),
+          {
+            status: 'rejected',
+            endedAt: serverTimestamp(),
+          }
+        );
+      }
     } catch (error) {
-      console.log('❌ Decline Error:', error);
+      console.log(
+        '❌ Decline Call Error:',
+        error
+      );
     }
+
     cleanupCall(true);
   };
 
+  // ==========================================
+  // START CALL
+  // ==========================================
   const startCall = async () => {
     try {
-      if (!currentUser?.uid) throw new Error('Login required.');
-      if (isCaller) await startOutgoingCall();
-      else await startIncomingCall();
-    } catch (error) { Alert.alert('Call Error', error?.message, [{ text: 'OK', onPress: () => navigation.goBack() }]); }
+      if (!currentUser?.uid) {
+        throw new Error(
+          'Login required.'
+        );
+      }
+
+      if (isCaller) {
+        await startOutgoingCall();
+      } else {
+        await startIncomingCall();
+      }
+    } catch (error) {
+      console.log(
+        '❌ Start Call Error:',
+        error
+      );
+
+      if (!mountedRef.current) {
+        return;
+      }
+
+      Alert.alert(
+        'Call Error',
+        error?.message ||
+          'Unable to start call.',
+        [
+          {
+            text: 'OK',
+            onPress: () => {
+              cleanupCall(true);
+            },
+          },
+        ],
+        {
+          cancelable: false,
+        }
+      );
+    }
   };
 
+  // ==========================================
+  // END CALL
+  // ==========================================
   const endCall = async () => {
-    try { if (callRef.current) await updateDoc(doc(db, 'calls', callRef.current), { status: 'ended', endedAt: serverTimestamp() }); } catch (error) {}
+    const callId =
+      callRef.current;
+
+    try {
+      if (callId) {
+        await updateDoc(
+          doc(db, 'calls', callId),
+          {
+            status: 'ended',
+            endedAt: serverTimestamp(),
+          }
+        );
+      }
+    } catch (error) {
+      console.log(
+        '❌ End Call Firebase Error:',
+        error
+      );
+    }
+
     cleanupCall(true);
   };
 
-  const cleanupCall = (goBack) => {
-    candidateCleanupRef.current.forEach((unsub) => { try { unsub(); } catch {} });
-    candidateCleanupRef.current = [];
-    if (timerRef.current) clearInterval(timerRef.current);
-    
-    stopLocalStream();
+  // ==========================================
+  // CLEANUP
+  // ==========================================
+  const cleanupCall = (
+    goBack = false
+  ) => {
+    if (cleanupDoneRef.current) {
+      if (
+        goBack &&
+        !navigationHandledRef.current
+      ) {
+        safeGoBack();
+      }
 
-    if (peerRef.current) { try { peerRef.current.close(); } catch {} }
+      return;
+    }
+
+    cleanupDoneRef.current = true;
+
+    console.log(
+      '🧹 Cleaning WebRTC call resources'
+    );
+
+    // ----------------------------------------
+    // FIREBASE LISTENERS
+    // ----------------------------------------
+    cleanupListenersRef.current.forEach(
+      (unsubscribe) => {
+        try {
+          unsubscribe();
+        } catch (error) {
+          console.log(
+            'Listener cleanup error:',
+            error
+          );
+        }
+      }
+    );
+
+    cleanupListenersRef.current = [];
+
+    // ----------------------------------------
+    // TIMER
+    // ----------------------------------------
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+
+    // ----------------------------------------
+    // ICE QUEUE
+    // ----------------------------------------
+    iceCandidateQueue.current = [];
+
+    // ----------------------------------------
+    // RESET ICE PROCESSING
+    // ----------------------------------------
+    iceProcessingRef.current =
+      Promise.resolve();
+
+    // ----------------------------------------
+    // STOP CAMERA + MICROPHONE
+    // ----------------------------------------
+    try {
+      stopLocalStream();
+    } catch (error) {
+      console.log(
+        '❌ Media cleanup error:',
+        error
+      );
+    }
+
+    // ----------------------------------------
+    // CLOSE PEER CONNECTION
+    // ----------------------------------------
+    if (peerRef.current) {
+      try {
+        peerRef.current.ontrack = null;
+        peerRef.current.onicecandidate = null;
+        peerRef.current.oniceconnectionstatechange =
+          null;
+        peerRef.current.onconnectionstatechange =
+          null;
+        peerRef.current.close();
+      } catch (error) {
+        console.log(
+          '❌ Peer cleanup error:',
+          error
+        );
+      }
+    }
+
     peerRef.current = null;
-    if (goBack) navigation.goBack();
+
+    // ----------------------------------------
+    // REMOTE STREAM
+    // ----------------------------------------
+    if (mountedRef.current) {
+      setRemoteStream(null);
+      setConnected(false);
+      setBusy(false);
+    }
+
+    // ----------------------------------------
+    // NAVIGATION
+    // ----------------------------------------
+    if (goBack) {
+      safeGoBack();
+    }
   };
 
+  // ==========================================
+  // FORMAT TIMER
+  // ==========================================
   const formatTime = (value) => {
-    const m = Math.floor(value / 60).toString().padStart(2, '0');
-    const s = (value % 60).toString().padStart(2, '0');
-    return `${m}:${s}`;
+    const minutes = Math.floor(
+      value / 60
+    )
+      .toString()
+      .padStart(2, '0');
+
+    const seconds = (
+      value % 60
+    )
+      .toString()
+      .padStart(2, '0');
+
+    return `${minutes}:${seconds}`;
   };
 
+  // ==========================================
+  // RETURN API
+  // ==========================================
   return {
-    type, name, isCaller,
-    localStream, remoteStream, isMuted, isCameraOff, facing, status, connected, timer, busy,
-    acceptCall, declineCall, endCall, toggleMute, toggleCamera, switchCamera, formatTime
+    type,
+    name,
+    isCaller,
+
+    localStream,
+    localStreamRef,
+
+    remoteStream,
+
+    isMuted,
+    isCameraOff,
+    facing,
+
+    status,
+    connected,
+    timer,
+    busy,
+
+    acceptCall,
+    declineCall,
+    endCall,
+
+    toggleMute,
+    toggleCamera,
+    switchCamera,
+
+    formatTime,
   };
 }
