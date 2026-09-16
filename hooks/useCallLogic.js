@@ -50,7 +50,6 @@ export default function useCallLogic(route, navigation) {
   }, []);
 
   const initializePeer = (stream) => {
-    // 🚀 Pass 'type' to configure transceivers properly
     const pc = createPeerConnection(
       stream,
       type,
@@ -64,16 +63,18 @@ export default function useCallLogic(route, navigation) {
         try {
           const side = isCaller ? 'offerCandidates' : 'answerCandidates';
           await addDoc(collection(db, 'calls', callRef.current, side), candidate.toJSON());
-        } catch (error) { console.log('ICE error:', error); }
+        } catch (error) { 
+          console.log('❌ ICE Firebase Write Error:', error); 
+        }
       }
     );
 
-    // 🚀 REAL CONNECTION STATUS
-    pc.onconnectionstatechange = () => {
-      const state = pc.connectionState;
-      console.log("🔥 WebRTC State Changed:", state);
+    // Track ICE connection state directly for reliable connection status
+    pc.oniceconnectionstatechange = () => {
+      const state = pc.iceConnectionState;
+      console.log("🧊 ICE State Changed:", state);
       
-      if (state === 'connected' && mountedRef.current) {
+      if ((state === 'connected' || state === 'completed') && mountedRef.current) {
         setConnected(true); 
         setBusy(false); 
         setStatus('Connected');
@@ -92,12 +93,14 @@ export default function useCallLogic(route, navigation) {
         if (change.type !== 'added') return;
         try {
           const candidateData = change.doc.data();
-          if (!pc.currentRemoteDescription) {
+          if (!pc.remoteDescription) {
             iceCandidateQueue.current.push(candidateData);
           } else {
             await pc.addIceCandidate(new RTCIceCandidate(candidateData));
           }
-        } catch (error) {}
+        } catch (error) {
+          console.log('❌ Remote ICE Add Error:', error);
+        }
       });
     });
     candidateCleanupRef.current.push(unsubscribe);
@@ -143,12 +146,14 @@ export default function useCallLogic(route, navigation) {
       if (!data) return;
       if (data.status === 'rejected') { Alert.alert('Rejected', `${name} declined.`); navigation.goBack(); return; }
       if (data.status === 'ended') { navigation.goBack(); return; }
-      if (!data.answer || pc.currentRemoteDescription) return;
+      if (!data.answer || pc.remoteDescription) return;
 
       try {
         await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
         await processIceQueue(pc, iceCandidateQueue);
-      } catch (error) {}
+      } catch (error) {
+        console.log('❌ Answer Processing Error:', error);
+      }
     });
     candidateCleanupRef.current.push(unsubscribe);
   };
@@ -189,13 +194,18 @@ export default function useCallLogic(route, navigation) {
         await pc.setLocalDescription(answer);
         await updateDoc(callDoc, { answer: { type: answer.type, sdp: answer.sdp }, status: 'connected' });
       }
-    } catch (error) { console.log('Accept error:', error); cleanupCall(true); }
+    } catch (error) { 
+      console.log('❌ Accept Call Error:', error); 
+      cleanupCall(true); 
+    }
   };
 
   const declineCall = async () => {
     try {
       if (callRef.current) await updateDoc(doc(db, 'calls', callRef.current), { status: 'rejected', endedAt: serverTimestamp() });
-    } catch (error) {}
+    } catch (error) {
+      console.log('❌ Decline Error:', error);
+    }
     cleanupCall(true);
   };
 
