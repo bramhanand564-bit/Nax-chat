@@ -69,7 +69,7 @@ export default function useCallLogic(route, navigation) {
       }
     );
 
-    // Track ICE connection state directly for reliable connection status
+    // 🚀 ACTUAL WEBRTC CONNECTION STATE (This controls the UI now)
     pc.oniceconnectionstatechange = () => {
       const state = pc.iceConnectionState;
       console.log("🧊 ICE State Changed:", state);
@@ -115,23 +115,34 @@ export default function useCallLogic(route, navigation) {
     candidateCleanupRef.current.push(unsubscribe);
   };
 
+  // ==========================================
+  // CALLER LOGIC (Strict Order Enforced)
+  // ==========================================
   const startOutgoingCall = async () => {
     if (!friendId) throw new Error('Friend ID missing.');
     const callDoc = doc(collection(db, 'calls'));
     callRef.current = callDoc.id;
 
+    // 1. Create Media Stream
     const stream = await createLocalStream();
-    const pc = initializePeer(stream);
 
-    listenForRemoteCandidates(callDoc.id, pc, 'answerCandidates');
-
+    // 🚀 FIX 1: WRITE PARENT DOCUMENT TO FIRESTORE FIRST (Before ICE generation starts)
     await setDoc(callDoc, {
       callerId: currentUser.uid, receiverId: friendId, callerName: currentUser.displayName || 'User',
       receiverName: name, type, status: 'ringing', createdAt: serverTimestamp(),
     });
 
+    // 2. Initialize Peer
+    const pc = initializePeer(stream);
+
+    // 3. Start Listening for Answer Candidates
+    listenForRemoteCandidates(callDoc.id, pc, 'answerCandidates');
+
+    // 4. Create Offer & Set Local Description (THIS triggers ICE candidate gathering)
     const offer = await pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: type === 'video' });
     await pc.setLocalDescription(offer);
+
+    // 5. Save Offer to Firebase
     await updateDoc(callDoc, { offer: { type: offer.type, sdp: offer.sdp } });
 
     listenForAnswer(callDoc.id, pc);
@@ -158,6 +169,9 @@ export default function useCallLogic(route, navigation) {
     candidateCleanupRef.current.push(unsubscribe);
   };
 
+  // ==========================================
+  // RECEIVER LOGIC (Strict Order Enforced)
+  // ==========================================
   const startIncomingCall = async () => {
     if (!incomingCallId) throw new Error('Call ID missing.');
     callRef.current = incomingCallId;
@@ -178,6 +192,10 @@ export default function useCallLogic(route, navigation) {
   const acceptCall = async () => {
     setStatus('Connecting...');
     const callDoc = doc(db, 'calls', incomingCallId);
+    
+    // 🚀 FIX 2: SEPARATE STATUS. We just say 'answered', not 'connected'. WebRTC handles 'connected'.
+    await updateDoc(callDoc, { status: 'answered' });
+
     try {
       const stream = await createLocalStream();
       const pc = initializePeer(stream);
@@ -187,12 +205,16 @@ export default function useCallLogic(route, navigation) {
       const snap = await getDoc(callDoc);
       const data = snap.data();
       if (data && data.offer) {
+        // Set Remote Description FIRST
         await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
         await processIceQueue(pc, iceCandidateQueue);
 
+        // Create Answer & Set Local Description (Triggers ICE gathering)
         const answer = await pc.createAnswer({ offerToReceiveAudio: true, offerToReceiveVideo: type === 'video' });
         await pc.setLocalDescription(answer);
-        await updateDoc(callDoc, { answer: { type: answer.type, sdp: answer.sdp }, status: 'connected' });
+        
+        // Save Answer to Firebase
+        await updateDoc(callDoc, { answer: { type: answer.type, sdp: answer.sdp } });
       }
     } catch (error) { 
       console.log('❌ Accept Call Error:', error); 
