@@ -19,7 +19,6 @@ export default function useCallLogic(route, navigation) {
   const incomingCallId = params.callId || '';
   const currentUser = auth.currentUser;
 
-  // 🎥 Use our new Media Hook
   const {
     localStream, localStreamRef, isMuted, isCameraOff, facing,
     createLocalStream, toggleMute, toggleCamera, switchCamera, stopLocalStream
@@ -51,14 +50,13 @@ export default function useCallLogic(route, navigation) {
   }, []);
 
   const initializePeer = (stream) => {
+    // 🚀 Pass 'type' to configure transceivers properly
     const pc = createPeerConnection(
       stream,
+      type,
       (remote) => {
         if (mountedRef.current) {
           setRemoteStream(remote);
-          setConnected(true);
-          setBusy(false);
-          setStatus('Connected');
         }
       },
       async (candidate) => {
@@ -70,10 +68,15 @@ export default function useCallLogic(route, navigation) {
       }
     );
 
+    // 🚀 REAL CONNECTION STATUS
     pc.onconnectionstatechange = () => {
       const state = pc.connectionState;
+      console.log("🔥 WebRTC State Changed:", state);
+      
       if (state === 'connected' && mountedRef.current) {
-        setConnected(true); setBusy(false); setStatus('Connected');
+        setConnected(true); 
+        setBusy(false); 
+        setStatus('Connected');
       }
       if (state === 'disconnected' && mountedRef.current) setStatus('Connection lost');
       if (state === 'failed' && mountedRef.current) { setStatus('Connection failed'); setBusy(false); }
@@ -145,7 +148,6 @@ export default function useCallLogic(route, navigation) {
       try {
         await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
         await processIceQueue(pc, iceCandidateQueue);
-        if (mountedRef.current) setStatus('Connecting...');
       } catch (error) {}
     });
     candidateCleanupRef.current.push(unsubscribe);
