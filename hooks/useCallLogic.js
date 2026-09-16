@@ -40,6 +40,9 @@ export default function useCallLogic(route, navigation) {
   const timerRef = useRef(null);
   const localStreamRef = useRef(null);
   const remoteStreamRef = useRef(null);
+  
+  // 🚀 THE MAGIC QUEUE (Fixes "Connecting..." issue)
+  const iceCandidateQueue = useRef([]); 
 
   useEffect(() => {
     if (!connected) return undefined;
@@ -53,31 +56,61 @@ export default function useCallLogic(route, navigation) {
     return () => { mountedRef.current = false; cleanupCall(false); };
   }, []);
 
+  // 🚀 1. CAMERA & MIC ACCESS
   const createLocalStream = async () => {
     const constraints = {
       audio: true,
       video: type === 'video' ? { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 24 } } : false,
     };
-    const stream = await mediaDevices.getUserMedia(constraints);
-    localStreamRef.current = stream;
-    if (mountedRef.current) setLocalStream(stream);
-    return stream;
+    try {
+      const stream = await mediaDevices.getUserMedia(constraints);
+      localStreamRef.current = stream;
+      if (mountedRef.current) setLocalStream(stream);
+      return stream;
+    } catch (err) {
+      console.log("Media Access Error:", err);
+      Alert.alert("Permission Denied", "Camera ya Mic ki permission nahi mili.");
+      throw err;
+    }
   };
 
   const createPeer = (stream) => {
     const pc = new RTCPeerConnection(ICE_SERVERS);
     peerRef.current = pc;
-    stream.getTracks().forEach((track) => pc.addTrack(track, stream));
 
+    // 🚀 2. SEND LOCAL MEDIA (Fallback Supported for React Native)
+    if (stream) {
+      try {
+        stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+      } catch (e) {
+        console.log("Using fallback addStream", e);
+        pc.addStream(stream);
+      }
+    }
+
+    // 🚀 3. RECEIVE REMOTE MEDIA (Modern)
     pc.ontrack = (event) => {
-      const stream = event.streams?.[0];
-      if (!stream) return;
-      remoteStreamRef.current = stream;
-      if (mountedRef.current) {
-        setRemoteStream(stream);
-        setConnected(true);
-        setBusy(false);
-        setStatus('Connected');
+      if (event.streams && event.streams[0]) {
+        remoteStreamRef.current = event.streams[0];
+        if (mountedRef.current) {
+          setRemoteStream(event.streams[0]);
+          setConnected(true);
+          setBusy(false);
+          setStatus('Connected');
+        }
+      }
+    };
+
+    // 🚀 4. RECEIVE REMOTE MEDIA (Lifesaver for Mobile)
+    pc.onaddstream = (event) => {
+      if (event.stream) {
+        remoteStreamRef.current = event.stream;
+        if (mountedRef.current) {
+          setRemoteStream(event.stream);
+          setConnected(true);
+          setBusy(false);
+          setStatus('Connected');
+        }
       }
     };
 
@@ -100,15 +133,49 @@ export default function useCallLogic(route, navigation) {
     return pc;
   };
 
-  // ==========================================
-  // CALLER LOGIC
-  // ==========================================
+  const processIceQueue = async (pc) => {
+    while (iceCandidateQueue.current.length > 0) {
+      const candidate = iceCandidateQueue.current.shift();
+      try { await pc.addIceCandidate(candidate); } 
+      catch (error) { console.log('Queue Process Error:', error); }
+    }
+  };
+
+  const listenForRemoteCandidates = (callId, pc, collectionName) => {
+    const unsubscribe = onSnapshot(collection(db, 'calls', callId, collectionName), (snapshot) => {
+      snapshot.docChanges().forEach(async (change) => {
+        if (change.type !== 'added') return;
+        try { 
+          const candidate = new RTCIceCandidate(change.doc.data());
+          if (!pc.currentRemoteDescription) {
+            iceCandidateQueue.current.push(candidate);
+          } else {
+            await pc.addIceCandidate(candidate);
+          }
+        } catch (error) {}
+      });
+    });
+    candidateCleanupRef.current.push(unsubscribe);
+  };
+
+  const listenForCallStatus = (callId) => {
+    const unsubscribe = onSnapshot(doc(db, 'calls', callId), (snapshot) => {
+      const data = snapshot.data();
+      if (!data) return;
+      if (data.status === 'rejected' || data.status === 'ended') navigation.goBack();
+    });
+    candidateCleanupRef.current.push(unsubscribe);
+  };
+
   const startOutgoingCall = async () => {
     if (!friendId) throw new Error('Friend ID missing.');
     const callDoc = doc(collection(db, 'calls'));
     callRef.current = callDoc.id;
+    
     const stream = await createLocalStream();
     const pc = createPeer(stream);
+
+    listenForRemoteCandidates(callDoc.id, pc, 'answerCandidates');
 
     await setDoc(callDoc, {
       callerId: currentUser.uid, receiverId: friendId, callerName: currentUser.displayName || 'User',
@@ -120,7 +187,6 @@ export default function useCallLogic(route, navigation) {
     await updateDoc(callDoc, { offer: { type: offer.type, sdp: offer.sdp } });
 
     listenForAnswer(callDoc.id, pc);
-    // 🛑 Yahan se maine ICE candidate listener hata diya hai (Bug yahi tha!)
     listenForCallStatus(callDoc.id);
 
     if (mountedRef.current) { setBusy(false); setStatus('Ringing...'); }
@@ -132,23 +198,17 @@ export default function useCallLogic(route, navigation) {
       if (!data) return;
       if (data.status === 'rejected') { Alert.alert('Rejected', `${name} declined.`); navigation.goBack(); return; }
       if (data.status === 'ended') { navigation.goBack(); return; }
-      
-      if (!data.answer || pc.remoteDescription) return;
+      if (!data.answer || pc.currentRemoteDescription) return;
       
       try {
         await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+        await processIceQueue(pc);
         if (mountedRef.current) setStatus('Connecting...');
-        
-        // 🚀 FIX: Jab call puri connect hone wali ho, TAB network raste (ICE) check karo!
-        listenForRemoteCandidates(callId, pc, 'answerCandidates');
       } catch (error) {}
     });
     candidateCleanupRef.current.push(unsubscribe);
   };
 
-  // ==========================================
-  // RECEIVER LOGIC
-  // ==========================================
   const startIncomingCall = async () => {
     if (!incomingCallId) throw new Error('Call ID missing.');
     callRef.current = incomingCallId;
@@ -172,33 +232,20 @@ export default function useCallLogic(route, navigation) {
     try {
       const stream = await createLocalStream();
       const pc = createPeer(stream);
-      // 🛑 Yahan se bhi purana ICE candidate listener hata diya gaya hai
+      
+      listenForRemoteCandidates(incomingCallId, pc, 'offerCandidates'); 
 
       const snap = await getDoc(callDoc);
       const data = snap.data();
       if (data && data.offer) {
         await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+        await processIceQueue(pc);
+
         const answer = await pc.createAnswer({ offerToReceiveAudio: true, offerToReceiveVideo: type === 'video' });
         await pc.setLocalDescription(answer);
         await updateDoc(callDoc, { answer: { type: answer.type, sdp: answer.sdp }, status: 'connected' });
-
-        // 🚀 FIX: Yahan par lagaya gaya hai ICE candidate listener
-        listenForRemoteCandidates(incomingCallId, pc, 'offerCandidates');
       }
     } catch (error) { console.log('Accept error:', error); cleanupCall(true); }
-  };
-
-  // ==========================================
-  // COMMON LOGIC
-  // ==========================================
-  const listenForRemoteCandidates = (callId, pc, collectionName) => {
-    const unsubscribe = onSnapshot(collection(db, 'calls', callId, collectionName), (snapshot) => {
-      snapshot.docChanges().forEach(async (change) => {
-        if (change.type !== 'added') return;
-        try { await pc.addIceCandidate(new RTCIceCandidate(change.doc.data())); } catch (error) {}
-      });
-    });
-    candidateCleanupRef.current.push(unsubscribe);
   };
 
   const declineCall = async () => {
@@ -214,15 +261,6 @@ export default function useCallLogic(route, navigation) {
       if (isCaller) await startOutgoingCall();
       else await startIncomingCall();
     } catch (error) { Alert.alert('Call Error', error?.message, [{ text: 'OK', onPress: () => navigation.goBack() }]); }
-  };
-
-  const listenForCallStatus = (callId) => {
-    const unsubscribe = onSnapshot(doc(db, 'calls', callId), (snapshot) => {
-      const data = snapshot.data();
-      if (!data) return;
-      if (data.status === 'rejected' || data.status === 'ended') navigation.goBack();
-    });
-    candidateCleanupRef.current.push(unsubscribe);
   };
 
   const toggleMute = () => {
