@@ -1,36 +1,85 @@
 // ==========================================
 // FILE: components/chat/MessageBubble.js
 // ==========================================
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, Image, TouchableOpacity, Modal, SafeAreaView, Linking } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../context/ThemeContext';
 import { Video, ResizeMode } from 'expo-av'; // 🚀 REAL VIDEO PLAYER IMPORT
 
+// 🚀 NEW IMPORTS FOR AUTO-DOWNLOAD & DELETE MASTER PLAN
+import * as FileSystem from 'expo-file-system';
+import { deleteCloudinaryByToken } from '../../utils/cloudinaryUpload';
+
 export default function MessageBubble({ item, isMe, isGlobal }) {
   const { isDark } = useTheme();
   const [modalVisible, setModalVisible] = useState(false); // For Fullscreen Image
 
-  // --- ORIGINAL COLORS PRESERVED ---
+  // 🚀 NEW STATE: To switch from Cloudinary URL to Offline Local File
+  const [localMediaUri, setLocalMediaUri] = useState(item.fileUri);
+
+  // --- ORIGINAL COLORS PRESERVED (LOCKED) ---
   const bubbleMe = '#087EFF';
   const bubbleOther = isDark ? '#1A2A3A' : '#FFFFFF';
   const textOther = isDark ? '#F4F7FA' : '#142532';
   const textSub = isDark ? '#8FA6B9' : '#6C8494';
   const border = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
 
-  // 🕒 TIME FORMATTER
+  // 🕒 TIME FORMATTER (LOCKED)
   const formatTime = (timestamp) => {
     if (!timestamp) return '';
     const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
-  // 📄 REAL DOCUMENT OPENER
+  // 📄 REAL DOCUMENT OPENER (UPDATED to use localMediaUri securely)
   const openDocument = () => {
-    if (item.fileUri) {
-      Linking.openURL(item.fileUri).catch(() => alert("Can't open this file."));
+    const targetUri = localMediaUri || item.fileUri;
+    if (targetUri) {
+      Linking.openURL(targetUri).catch(() => alert("Can't open this file."));
     }
   };
+
+  // 💥 THE MASTERSTROKE LOGIC (AUTO-DOWNLOAD & DELETE)
+  useEffect(() => {
+    let isMounted = true;
+
+    const processAutoDownloadAndDelete = async () => {
+      // RULE: Sirf receiver ke liye execute hoga jiske paas deleteToken aaya hai
+      if (!isMe && item.fileUri && item.deleteToken) {
+        try {
+          // 1. Ek safe offline path banayenge (taki cache me dhundh sakein)
+          const ext = item.type === 'video' ? '.mp4' : (item.type === 'image' ? '.jpg' : '.pdf');
+          const localPath = `${FileSystem.documentDirectory}nax_media_${item.id || Date.now()}${ext}`;
+
+          // 2. Check karenge ki kya receiver ne pehle hi isko download kar liya hai?
+          const fileInfo = await FileSystem.getInfoAsync(localPath);
+
+          if (fileInfo.exists) {
+            // Agar file already phone storage me hai, to direct use karo (Net & Server bachega)
+            if (isMounted) setLocalMediaUri(localPath);
+          } else {
+            // 3. Agar nahi hai, to background me turant Cloudinary se download karo
+            const downloadRes = await FileSystem.downloadAsync(item.fileUri, localPath);
+            
+            if (downloadRes.status === 200) {
+              if (isMounted) setLocalMediaUri(downloadRes.uri); // UI offline file par switch ho gaya
+
+              // 4. 💥 MASTERSTROKE: Download 100% hote hi Cloudinary se Delete kar do! (Cost ₹0)
+              await deleteCloudinaryByToken(item.deleteToken);
+            }
+          }
+        } catch (error) {
+          console.log("Auto-Download/Delete Error:", error);
+        }
+      }
+    };
+
+    processAutoDownloadAndDelete();
+
+    return () => { isMounted = false; };
+  }, [item.fileUri, item.deleteToken, isMe, item.id, item.type]);
+
 
   return (
     <View style={[styles.messageWrapper, isMe ? styles.messageWrapperMe : styles.messageWrapperOther]}>
@@ -50,7 +99,7 @@ export default function MessageBubble({ item, isMe, isGlobal }) {
         {item.type === 'image' && item.fileUri && (
           <>
             <TouchableOpacity activeOpacity={0.9} onPress={() => setModalVisible(true)}>
-              <Image source={{ uri: item.fileUri }} style={styles.mediaImage} resizeMode="cover" />
+              <Image source={{ uri: localMediaUri || item.fileUri }} style={styles.mediaImage} resizeMode="cover" />
             </TouchableOpacity>
             
             {/* FULLSCREEN IMAGE MODAL */}
@@ -59,7 +108,7 @@ export default function MessageBubble({ item, isMe, isGlobal }) {
                 <TouchableOpacity style={styles.closeBtn} onPress={() => setModalVisible(false)}>
                   <Ionicons name="close" size={32} color="#FFF" />
                 </TouchableOpacity>
-                <Image source={{ uri: item.fileUri }} style={styles.fullScreenImage} resizeMode="contain" />
+                <Image source={{ uri: localMediaUri || item.fileUri }} style={styles.fullScreenImage} resizeMode="contain" />
               </SafeAreaView>
             </Modal>
           </>
@@ -70,7 +119,7 @@ export default function MessageBubble({ item, isMe, isGlobal }) {
           <View style={styles.videoContainer}>
             <Video
               style={styles.mediaVideo}
-              source={{ uri: item.fileUri }}
+              source={{ uri: localMediaUri || item.fileUri }}
               useNativeControls={true} // Shows play/pause/volume controls
               resizeMode={ResizeMode.COVER}
               isLooping={false}
@@ -88,14 +137,14 @@ export default function MessageBubble({ item, isMe, isGlobal }) {
           </TouchableOpacity>
         )}
 
-        {/* 💬 TEXT RENDERING */}
+        {/* 💬 TEXT RENDERING (LOCKED) */}
         {item.text ? (
           <Text style={[styles.messageText, { color: isMe ? '#FFF' : textOther, marginTop: (item.type && item.type !== 'text') ? 6 : 0 }]}>
             {item.text}
           </Text>
         ) : null}
 
-        {/* 🕒 TIMESTAMP */}
+        {/* 🕒 TIMESTAMP (LOCKED) */}
         <Text style={[styles.timestamp, { color: isMe ? 'rgba(255,255,255,0.7)' : textSub }]}>
           {formatTime(item.createdAt)}
         </Text>
@@ -105,6 +154,7 @@ export default function MessageBubble({ item, isMe, isGlobal }) {
   );
 }
 
+// STYLES 100% LOCKED
 const styles = StyleSheet.create({
   messageWrapper: { marginBottom: 15, maxWidth: '82%' },
   messageWrapperMe: { alignSelf: 'flex-end' },
