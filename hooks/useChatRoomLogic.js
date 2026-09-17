@@ -8,13 +8,17 @@ import { auth, db } from '../firebaseConfig';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 
+import { uploadToCloudinary } from '../utils/cloudinaryUpload'; 
+
 export default function useChatRoomLogic(chatId, isGlobal, friendId, chatName, navigation) {
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  
+  const [uploadProgress, setUploadProgress] = useState(0);
 
-  // 🔄 REAL-TIME FETCH
+  // 🔄 REAL-TIME FETCH (LOCKED)
   useEffect(() => {
     if (!auth.currentUser) return;
     const q = query(collection(db, 'chats', chatId, 'messages'), orderBy('createdAt', 'desc'));
@@ -29,7 +33,7 @@ export default function useChatRoomLogic(chatId, isGlobal, friendId, chatName, n
     return () => unsubscribe();
   }, [chatId]);
 
-  // 📝 TEXT MESSAGE LOGIC
+  // 📝 TEXT MESSAGE LOGIC (LOCKED)
   const handleSend = async () => {
     if (!inputText.trim() || !auth.currentUser) return;
     const msgText = inputText.trim();
@@ -58,7 +62,7 @@ export default function useChatRoomLogic(chatId, isGlobal, friendId, chatName, n
     }
   };
 
-  // 📎 MEDIA SENDING LOGIC (Image & Video)
+  // 📎 MEDIA SENDING LOGIC (LOCKED)
   const handleMediaPick = async (mediaType) => {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
@@ -68,43 +72,73 @@ export default function useChatRoomLogic(chatId, isGlobal, friendId, chatName, n
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
         const fileUri = result.assets[0].uri;
-        sendMediaMessage(fileUri, mediaType); // Sending directly (Firebase storage upload can be added here later)
+        await sendMediaMessage(fileUri, mediaType); 
       }
     } catch (error) {
       console.log('Media pick error:', error);
     }
   };
 
-  // 📄 DOCUMENT SENDING LOGIC
+  // 📄 DOCUMENT SENDING LOGIC (LOCKED)
   const handleDocumentPick = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({ copyToCacheDirectory: true });
       if (result.assets && result.assets.length > 0) {
-        sendMediaMessage(result.assets[0].uri, 'file', result.assets[0].name);
+        await sendMediaMessage(result.assets[0].uri, 'file', result.assets[0].name);
       }
     } catch (error) {
       console.log('Doc pick error:', error);
     }
   };
 
-  // 🚀 SAVE MEDIA TO FIRESTORE
+  // 🚀 SAVE MEDIA TO CLOUDINARY THEN FIRESTORE (UPDATED)
   const sendMediaMessage = async (fileUri, type, fileName = '') => {
     try {
+      setSending(true);
+      setUploadProgress(0);
+
+      // 1. Cloudinary upload using EXACT object structure
+      const uploadResult = await uploadToCloudinary({
+        fileUri: fileUri,
+        fileName: fileName,
+        mimeType: type === 'video' ? 'video/mp4' : type === 'image' ? 'image/jpeg' : '*/*',
+        onProgress: (progress) => setUploadProgress(progress)
+      });
+
+      if (!uploadResult || !uploadResult.secureUrl) {
+        throw new Error("Cloudinary upload failed, URL is null");
+      }
+
+      if (!isGlobal) {
+        await setDoc(doc(db, 'chats', chatId), { 
+          lastUpdated: serverTimestamp(),
+          participants: [auth.currentUser.uid, friendId].filter(Boolean)
+        }, { merge: true });
+      }
+
+      // 3. Save REAL URL and DELETE TOKEN to Firestore
       await addDoc(collection(db, 'chats', chatId, 'messages'), {
-        fileUri: fileUri, // For now storing local URI. (P2P or Storage integration goes here)
+        fileUri: uploadResult.secureUrl, // 🌍 Real Internet URL
+        deleteToken: uploadResult.deleteToken || null, // 🗑️ Token for Auto-Delete
+        publicId: uploadResult.publicId || null,
         fileName: fileName,
         senderId: auth.currentUser.uid,
         senderName: auth.currentUser.email?.split('@')[0] || 'User',
         createdAt: serverTimestamp(),
-        type: type, // 'image', 'video', or 'file'
+        type: type, 
         text: type === 'image' ? '📷 Photo' : type === 'video' ? '🎥 Video' : '📄 Document'
       });
+
     } catch (error) {
       console.log('Media Send Error:', error);
+      Alert.alert('Upload Failed', 'Could not send media file.');
+    } finally {
+      setSending(false);
+      setUploadProgress(0);
     }
   };
 
-  // 📞 CALL LOGIC
+  // 📞 CALL LOGIC (LOCKED)
   const initiateCall = (type) => {
     if (isGlobal) return Alert.alert('Notice', 'Calls are only available in private chats.');
     if (!friendId) return Alert.alert('Error', 'Friend ID missing.');
@@ -112,7 +146,7 @@ export default function useChatRoomLogic(chatId, isGlobal, friendId, chatName, n
   };
 
   return {
-    messages, inputText, setInputText, loading, sending,
+    messages, inputText, setInputText, loading, sending, uploadProgress,
     handleSend, handleMediaPick, handleDocumentPick, initiateCall
   };
 }
