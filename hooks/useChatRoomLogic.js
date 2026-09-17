@@ -62,7 +62,7 @@ export default function useChatRoomLogic(chatId, isGlobal, friendId, chatName, n
     }
   };
 
-  // 📎 MEDIA SENDING LOGIC (LOCKED)
+  // 📎 MEDIA SENDING LOGIC (UPDATED: Extracting actual MIME type and File Name)
   const handleMediaPick = async (mediaType) => {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
@@ -71,37 +71,45 @@ export default function useChatRoomLogic(chatId, isGlobal, friendId, chatName, n
       });
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
-        const fileUri = result.assets[0].uri;
-        await sendMediaMessage(fileUri, mediaType); 
+        const asset = result.assets[0];
+        const fileUri = asset.uri;
+        const actualMimeType = asset.mimeType; // 🚀 GETTING REAL MIME TYPE (e.g. video/quicktime)
+        const fileName = asset.fileName || fileUri.split('/').pop();
+
+        await sendMediaMessage(fileUri, mediaType, fileName, actualMimeType); 
       }
     } catch (error) {
       console.log('Media pick error:', error);
     }
   };
 
-  // 📄 DOCUMENT SENDING LOGIC (LOCKED)
+  // 📄 DOCUMENT SENDING LOGIC (UPDATED: Extracting actual MIME type)
   const handleDocumentPick = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({ copyToCacheDirectory: true });
       if (result.assets && result.assets.length > 0) {
-        await sendMediaMessage(result.assets[0].uri, 'file', result.assets[0].name);
+        const asset = result.assets[0];
+        await sendMediaMessage(asset.uri, 'file', asset.name, asset.mimeType);
       }
     } catch (error) {
       console.log('Doc pick error:', error);
     }
   };
 
-  // 🚀 SAVE MEDIA TO CLOUDINARY THEN FIRESTORE (UPDATED)
-  const sendMediaMessage = async (fileUri, type, fileName = '') => {
+  // 🚀 SAVE MEDIA TO CLOUDINARY THEN FIRESTORE (UPDATED: Passing dynamic actualMimeType)
+  const sendMediaMessage = async (fileUri, type, fileName = '', actualMimeType = null) => {
     try {
       setSending(true);
       setUploadProgress(0);
 
-      // 1. Cloudinary upload using EXACT object structure
+      // Fallback mime type if picker doesn't provide one
+      const finalMimeType = actualMimeType || (type === 'video' ? 'video/mp4' : type === 'image' ? 'image/jpeg' : '*/*');
+
+      // 1. Cloudinary upload using EXACT mime type
       const uploadResult = await uploadToCloudinary({
         fileUri: fileUri,
         fileName: fileName,
-        mimeType: type === 'video' ? 'video/mp4' : type === 'image' ? 'image/jpeg' : '*/*',
+        mimeType: finalMimeType, // 🚀 PASSING DYNAMIC MIME TYPE HERE
         onProgress: (progress) => setUploadProgress(progress)
       });
 
@@ -119,7 +127,7 @@ export default function useChatRoomLogic(chatId, isGlobal, friendId, chatName, n
       // 3. Save REAL URL and DELETE TOKEN to Firestore
       await addDoc(collection(db, 'chats', chatId, 'messages'), {
         fileUri: uploadResult.secureUrl, // 🌍 Real Internet URL
-        deleteToken: uploadResult.deleteToken || null, // 🗑️ Token for Auto-Delete
+        deleteToken: uploadResult.deleteToken || null, 
         publicId: uploadResult.publicId || null,
         fileName: fileName,
         senderId: auth.currentUser.uid,
