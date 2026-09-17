@@ -7,7 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../context/ThemeContext';
 import { Video, ResizeMode } from 'expo-av'; // 🚀 REAL VIDEO PLAYER IMPORT
 
-// 🚀 NEW IMPORTS FOR AUTO-DOWNLOAD & DELETE MASTER PLAN
+// 🚀 IMPORTS FOR AUTO-DOWNLOAD & DELETE MASTER PLAN
 import * as FileSystem from 'expo-file-system';
 import { deleteCloudinaryByToken } from '../../utils/cloudinaryUpload';
 
@@ -15,7 +15,7 @@ export default function MessageBubble({ item, isMe, isGlobal }) {
   const { isDark } = useTheme();
   const [modalVisible, setModalVisible] = useState(false); // For Fullscreen Image
 
-  // 🚀 NEW STATE: To switch from Cloudinary URL to Offline Local File
+  // 🚀 STATE: To switch from Cloudinary URL to Offline Local File
   const [localMediaUri, setLocalMediaUri] = useState(item.fileUri);
 
   // --- ORIGINAL COLORS PRESERVED (LOCKED) ---
@@ -32,7 +32,7 @@ export default function MessageBubble({ item, isMe, isGlobal }) {
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
-  // 📄 REAL DOCUMENT OPENER (UPDATED to use localMediaUri securely)
+  // 📄 REAL DOCUMENT OPENER (LOCKED)
   const openDocument = () => {
     const targetUri = localMediaUri || item.fileUri;
     if (targetUri) {
@@ -40,32 +40,42 @@ export default function MessageBubble({ item, isMe, isGlobal }) {
     }
   };
 
-  // 💥 THE MASTERSTROKE LOGIC (AUTO-DOWNLOAD & DELETE)
+  // 💥 THE MASTERSTROKE LOGIC (AUTO-DOWNLOAD & DELETE - NOW WITH DYNAMIC EXTENSION)
   useEffect(() => {
     let isMounted = true;
 
     const processAutoDownloadAndDelete = async () => {
-      // RULE: Sirf receiver ke liye execute hoga jiske paas deleteToken aaya hai
       if (!isMe && item.fileUri && item.deleteToken) {
         try {
-          // 1. Ek safe offline path banayenge (taki cache me dhundh sakein)
-          const ext = item.type === 'video' ? '.mp4' : (item.type === 'image' ? '.jpg' : '.pdf');
+          // 1. 🚀 FIX: Extract REAL extension from fileName or fileUri instead of hardcoding .mp4
+          let ext = '';
+          if (item.fileName && item.fileName.includes('.')) {
+            ext = item.fileName.substring(item.fileName.lastIndexOf('.'));
+          } else if (item.fileUri && item.fileUri.split('?')[0].includes('.')) {
+            const urlWithoutParams = item.fileUri.split('?')[0];
+            ext = urlWithoutParams.substring(urlWithoutParams.lastIndexOf('.'));
+          }
+          
+          // Fallback just in case extension is missing or weird
+          if (!ext || ext.length > 6 || ext.includes('/')) {
+            ext = item.type === 'video' ? '.mp4' : (item.type === 'image' ? '.jpg' : '.pdf');
+          }
+
           const localPath = `${FileSystem.documentDirectory}nax_media_${item.id || Date.now()}${ext}`;
 
           // 2. Check karenge ki kya receiver ne pehle hi isko download kar liya hai?
           const fileInfo = await FileSystem.getInfoAsync(localPath);
 
           if (fileInfo.exists) {
-            // Agar file already phone storage me hai, to direct use karo (Net & Server bachega)
             if (isMounted) setLocalMediaUri(localPath);
           } else {
-            // 3. Agar nahi hai, to background me turant Cloudinary se download karo
+            // 3. Background me Cloudinary se download karo
             const downloadRes = await FileSystem.downloadAsync(item.fileUri, localPath);
             
             if (downloadRes.status === 200) {
-              if (isMounted) setLocalMediaUri(downloadRes.uri); // UI offline file par switch ho gaya
+              if (isMounted) setLocalMediaUri(downloadRes.uri);
 
-              // 4. 💥 MASTERSTROKE: Download 100% hote hi Cloudinary se Delete kar do! (Cost ₹0)
+              // 4. Download 100% hote hi Cloudinary se Delete kar do!
               await deleteCloudinaryByToken(item.deleteToken);
             }
           }
@@ -78,7 +88,7 @@ export default function MessageBubble({ item, isMe, isGlobal }) {
     processAutoDownloadAndDelete();
 
     return () => { isMounted = false; };
-  }, [item.fileUri, item.deleteToken, isMe, item.id, item.type]);
+  }, [item.fileUri, item.deleteToken, isMe, item.id, item.type, item.fileName]);
 
 
   return (
@@ -114,13 +124,13 @@ export default function MessageBubble({ item, isMe, isGlobal }) {
           </>
         )}
 
-        {/* 🎥 100% REAL VIDEO PLAYER (NO FAKE BUTTON) */}
+        {/* 🎥 100% REAL VIDEO PLAYER */}
         {item.type === 'video' && item.fileUri && (
           <View style={styles.videoContainer}>
             <Video
               style={styles.mediaVideo}
               source={{ uri: localMediaUri || item.fileUri }}
-              useNativeControls={true} // Shows play/pause/volume controls
+              useNativeControls={true}
               resizeMode={ResizeMode.COVER}
               isLooping={false}
             />
