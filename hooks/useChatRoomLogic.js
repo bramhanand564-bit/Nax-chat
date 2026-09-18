@@ -7,6 +7,8 @@ import { collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, doc, s
 import { auth, db } from '../firebaseConfig';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
+// 🚀 NEW: Offline Storage for Step 2
+import AsyncStorage from '@react-native-async-storage/async-storage'; 
 
 import { uploadToCloudinary } from '../utils/cloudinaryUpload'; 
 import { processMediaForUpload } from '../utils/mediaCompressor';
@@ -19,18 +21,64 @@ export default function useChatRoomLogic(chatId, isGlobal, friendId, chatName, n
   
   const [uploadProgress, setUploadProgress] = useState(0);
 
-  // 🔄 REAL-TIME FETCH (LOCKED)
+  // 🔄 REAL-TIME FETCH + SMART LOCAL CACHING (STEP 2 MAGIC)
   useEffect(() => {
     if (!auth.currentUser) return;
+    
+    const localKey = `chat_cache_${chatId}`;
+
+    // 1. Load from Phone Memory instantly (Zero Loading Time)
+    const loadLocalMessages = async () => {
+      try {
+        const cached = await AsyncStorage.getItem(localKey);
+        if (cached) {
+          setMessages(JSON.parse(cached));
+          setLoading(false); // UI instantly shows old chat
+        }
+      } catch (e) {
+        console.log('Cache read error:', e);
+      }
+    };
+    
+    loadLocalMessages();
+
+    // 2. Listen to Firebase for ONLY new or active messages
     const q = query(collection(db, 'chats', chatId, 'messages'), orderBy('createdAt', 'desc'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const msgs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-      setMessages(msgs);
-      setLoading(false);
+    const unsubscribe = onSnapshot(q, async (snapshot) => {
+      const serverMsgs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      
+      // 3. THE MERGE: Combine Offline and Online messages silently
+      try {
+        const cached = await AsyncStorage.getItem(localKey);
+        let localMsgs = cached ? JSON.parse(cached) : [];
+        
+        const mergedMap = new Map();
+        // Pehle local messages daalo
+        localMsgs.forEach(m => mergedMap.set(m.id, m));
+        // Phir server messages daalo (ye naye messages ko add karega aur purano ko update karega)
+        serverMsgs.forEach(m => mergedMap.set(m.id, m));
+        
+        // Time ke hisaab se sort karo (Newest first)
+        const finalMsgs = Array.from(mergedMap.values()).sort((a, b) => {
+          const timeA = a.createdAt?.seconds || 0;
+          const timeB = b.createdAt?.seconds || 0;
+          return timeB - timeA; 
+        });
+
+        setMessages(finalMsgs);
+        setLoading(false);
+        
+        // Merge hone ke baad updated list ko waapas phone mein save kar do
+        await AsyncStorage.setItem(localKey, JSON.stringify(finalMsgs));
+      } catch (e) {
+        console.log('Cache merge error:', e);
+      }
+
     }, (error) => {
       console.log("Chat fetch error:", error);
       setLoading(false);
     });
+    
     return () => unsubscribe();
   }, [chatId]);
 
@@ -128,7 +176,7 @@ export default function useChatRoomLogic(chatId, isGlobal, friendId, chatName, n
     }
   };
 
-  // 🚀 SAVE MEDIA TO CLOUDINARY (UPDATED DEBUG ALERT ONLY)
+  // 🚀 SAVE MEDIA TO CLOUDINARY (LOCKED)
   const sendMediaMessage = async (fileUri, type, fileName = '', actualMimeType = null, qualityMode = 'standard') => {
     try {
       setSending(true);
