@@ -12,7 +12,6 @@ const DELETE_URL = `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/delete_by_toke
 export async function uploadToCloudinary({ fileUri, fileName, mimeType, onProgress }) {
   if (!fileUri) throw new Error('File URI is required.');
 
-  // 🚀 FIX 1: URI Normalizer (Ensure 'file://' prefix is present)
   let finalUri = fileUri;
   if (!finalUri.startsWith('file://') && !finalUri.startsWith('content://') && !finalUri.startsWith('http')) {
     finalUri = 'file://' + finalUri;
@@ -21,8 +20,6 @@ export async function uploadToCloudinary({ fileUri, fileName, mimeType, onProgre
   const info = await FileSystem.getInfoAsync(finalUri);
   if (!info.exists) throw new Error('Selected file was not found.');
 
-  // 🚀 FIX 2: Smart MIME Type Detector (Fixes the 400 Bad Request)
-  // Hum old mimeType (like video/quicktime) ko ignore karke new compressed file ka real type bhejenge
   let safeMimeType = mimeType || 'application/octet-stream';
   const lowerUri = finalUri.toLowerCase();
   
@@ -38,7 +35,6 @@ export async function uploadToCloudinary({ fileUri, fileName, mimeType, onProgre
 
   return new Promise((resolve, reject) => {
     
-    // 🚀 EXPO NATIVE UPLOADER
     const uploadTask = FileSystem.createUploadTask(
       UPLOAD_URL,
       finalUri,
@@ -46,10 +42,10 @@ export async function uploadToCloudinary({ fileUri, fileName, mimeType, onProgre
         httpMethod: 'POST',
         uploadType: FileSystem.FileSystemUploadType.MULTIPART,
         fieldName: 'file',
-        mimeType: safeMimeType, // 👈 Passing the corrected MIME type here!
+        mimeType: safeMimeType, 
         parameters: {
-          upload_preset: UPLOAD_PRESET,
-          return_delete_token: 'true',
+          upload_preset: UPLOAD_PRESET
+          // 🚀 YAHAN SE 'return_delete_token: true' HATA DIYA HAI TAAKI CLOUDINARY CRASH NA KARE
         },
       },
       (event) => {
@@ -83,7 +79,6 @@ export async function uploadToCloudinary({ fileUri, fileName, mimeType, onProgre
             createdAt: data.created_at || null
           });
         } else {
-          // 🚀 Detailed Error Parsing (Taaki agar fail ho to exact Cloudinary ka message dikhe)
           let errorMessage = 'Upload failed with status: ' + response.status;
           try {
             const errorData = JSON.parse(response.body);
