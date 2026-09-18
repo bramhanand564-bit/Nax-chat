@@ -61,6 +61,12 @@
             "kotlinVersion": "1.8.0"
           }
         }
+      ],
+      [
+        "@react-native-google-signin/google-signin",
+        {
+          "iosUrlScheme": "com.googleusercontent.apps.REPLACE_LATER"
+        }
       ]
     ]
   }
