@@ -12,28 +12,47 @@ const DELETE_URL = `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/delete_by_toke
 export async function uploadToCloudinary({ fileUri, fileName, mimeType, onProgress }) {
   if (!fileUri) throw new Error('File URI is required.');
 
-  const info = await FileSystem.getInfoAsync(fileUri);
+  // 🚀 FIX 1: URI Normalizer (Ensure 'file://' prefix is present)
+  let finalUri = fileUri;
+  if (!finalUri.startsWith('file://') && !finalUri.startsWith('content://') && !finalUri.startsWith('http')) {
+    finalUri = 'file://' + finalUri;
+  }
+
+  const info = await FileSystem.getInfoAsync(finalUri);
   if (!info.exists) throw new Error('Selected file was not found.');
+
+  // 🚀 FIX 2: Smart MIME Type Detector (Fixes the 400 Bad Request)
+  // Hum old mimeType (like video/quicktime) ko ignore karke new compressed file ka real type bhejenge
+  let safeMimeType = mimeType || 'application/octet-stream';
+  const lowerUri = finalUri.toLowerCase();
+  
+  if (lowerUri.endsWith('.jpg') || lowerUri.endsWith('.jpeg')) {
+    safeMimeType = 'image/jpeg';
+  } else if (lowerUri.endsWith('.png')) {
+    safeMimeType = 'image/png';
+  } else if (lowerUri.endsWith('.mp4')) {
+    safeMimeType = 'video/mp4';
+  } else if (lowerUri.endsWith('.mov')) {
+    safeMimeType = 'video/quicktime';
+  }
 
   return new Promise((resolve, reject) => {
     
-    // 🚀 EXPO NATIVE UPLOADER (No XMLHttpRequest!)
-    // Ye file ko direct hardware se utha kar upload karta hai (100% Safe & Fast)
+    // 🚀 EXPO NATIVE UPLOADER
     const uploadTask = FileSystem.createUploadTask(
       UPLOAD_URL,
-      fileUri,
+      finalUri,
       {
         httpMethod: 'POST',
         uploadType: FileSystem.FileSystemUploadType.MULTIPART,
         fieldName: 'file',
-        mimeType: mimeType || 'application/octet-stream',
+        mimeType: safeMimeType, // 👈 Passing the corrected MIME type here!
         parameters: {
           upload_preset: UPLOAD_PRESET,
           return_delete_token: 'true',
         },
       },
       (event) => {
-        // 📊 REAL-TIME PROGRESS BAR TRACKING
         if (onProgress && event.totalBytesExpectedToSend > 0) {
           const progress = Math.round((event.totalBytesSent / event.totalBytesExpectedToSend) * 100);
           onProgress(progress);
@@ -54,7 +73,7 @@ export async function uploadToCloudinary({ fileUri, fileName, mimeType, onProgre
 
           resolve({
             url: data.secure_url,
-            secureUrl: data.secure_url, // 🌍 Real Working URL (No Black Box)
+            secureUrl: data.secure_url, 
             publicId: data.public_id || null,
             resourceType: data.resource_type || null,
             format: data.format || null,
@@ -64,7 +83,15 @@ export async function uploadToCloudinary({ fileUri, fileName, mimeType, onProgre
             createdAt: data.created_at || null
           });
         } else {
-          reject(new Error('Upload failed with status: ' + response.status));
+          // 🚀 Detailed Error Parsing (Taaki agar fail ho to exact Cloudinary ka message dikhe)
+          let errorMessage = 'Upload failed with status: ' + response.status;
+          try {
+            const errorData = JSON.parse(response.body);
+            if (errorData.error && errorData.error.message) {
+              errorMessage = errorData.error.message;
+            }
+          } catch (e) {}
+          reject(new Error(errorMessage));
         }
       })
       .catch((error) => {
@@ -74,7 +101,7 @@ export async function uploadToCloudinary({ fileUri, fileName, mimeType, onProgre
   });
 }
 
-// Delete logic ke liye fetch theek hai kyunki isme file read nahi karni hoti
+// Delete logic
 export async function deleteCloudinaryByToken(deleteToken) {
   if (!deleteToken) return { success: false, reason: 'No delete token.' };
 
