@@ -8,8 +8,8 @@ import { auth } from '../firebaseConfig';
 // 🚀 GOOGLE INITIALIZATION
 export const initGoogleSignIn = () => {
   GoogleSignin.configure({
-    // Yahan apna Web Client ID paste karna hai (Firebase Console se)
-    webClientId: 'YAHAN_APNA_WEB_CLIENT_ID_PASTE_KARO.apps.googleusercontent.com', 
+    // Yahan tumhara asli Web Client ID lag gaya hai!
+    webClientId: '138730719673-5vn0agd7hibmqd87b5a82l2q66dqnij9.apps.googleusercontent.com', 
     
     // 🚀 YAHI WO JADUI CHABI HAI! Iske bina Drive ka hidden folder access nahi hoga
     scopes: ['https://www.googleapis.com/auth/drive.appdata'], 
@@ -26,7 +26,7 @@ export const signInWithGoogle = async () => {
     
     // 2. Open Google Login Pop-up
     const userInfo = await GoogleSignin.signIn();
-    const { idToken, accessToken } = userInfo.data || userInfo; // Handle different lib versions
+    const { idToken, accessToken } = userInfo.data || userInfo;
     
     // 3. Connect Google with Firebase
     const googleCredential = GoogleAuthProvider.credential(idToken);
@@ -38,7 +38,7 @@ export const signInWithGoogle = async () => {
     return { 
       success: true, 
       user: userCredential.user, 
-      driveAccessToken: accessToken // Ye chabi hum backup logic me use karenge
+      driveAccessToken: accessToken 
     };
     
   } catch (error) {
