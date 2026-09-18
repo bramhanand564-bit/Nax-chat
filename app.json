@@ -13,52 +13,52 @@
       "bundleIdentifier": "com.nax.chat"
     },
     "android": {
-      "package": "com.nax.chat",
-      "minSdkVersion": 24
+      "package": "com.nax.chat"
     },
     "plugins": [
       [
         "expo-camera",
         {
-          "cameraPermission":
-            "Allow Nax Chat to access your camera."
+          "cameraPermission": "Allow Nax Chat to access your camera."
         }
       ],
       [
         "expo-image-picker",
         {
-          "photosPermission":
-            "Allow Nax Chat to access your gallery."
+          "photosPermission": "Allow Nax Chat to access your gallery."
         }
       ],
       [
         "expo-av",
         {
-          "microphonePermission":
-            "Allow Nax Chat to access your microphone."
+          "microphonePermission": "Allow Nax Chat to access your microphone."
         }
       ],
       [
         "expo-location",
         {
-          "locationAlwaysAndWhenInUsePermission":
-            "Allow Nax Chat to share your live location."
+          "locationAlwaysAndWhenInUsePermission": "Allow Nax Chat to share your live location."
         }
       ],
       [
         "expo-contacts",
         {
-          "contactsPermission":
-            "Allow Nax Chat to share contacts."
+          "contactsPermission": "Allow Nax Chat to share contacts."
         }
       ],
       [
         "@config-plugins/react-native-webrtc",
         {
-          "cameraPermission":
-            "Allow Nax Chat to access your camera.",
-          "microphonePermission":
-            "Allow Nax Chat to access your microphone."
+          "cameraPermission": "Allow Nax Chat to access your camera.",
+          "microphonePermission": "Allow Nax Chat to access your microphone."
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "minSdkVersion": 24
+          }
         }
       ]
     ]
