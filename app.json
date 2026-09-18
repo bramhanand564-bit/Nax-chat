@@ -63,12 +63,7 @@
           }
         }
       ],
-      [
-        "@react-native-google-signin/google-signin",
-        {
-          "iosUrlScheme": "com.googleusercontent.apps.REPLACE_LATER"
-        }
-      ]
+      "@react-native-google-signin/google-signin"
     ]
   }
 }
