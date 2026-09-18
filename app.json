@@ -13,7 +13,8 @@
       "bundleIdentifier": "com.nax.chat"
     },
     "android": {
-      "package": "com.nax.chat"
+      "package": "com.nax.chat",
+      "minSdkVersion": 24
     },
     "plugins": [
       [
