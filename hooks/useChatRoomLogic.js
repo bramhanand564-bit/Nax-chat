@@ -9,7 +9,6 @@ import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 
 import { uploadToCloudinary } from '../utils/cloudinaryUpload'; 
-// 🚀 NEW IMPORT: Media Compressor File
 import { processMediaForUpload } from '../utils/mediaCompressor';
 
 export default function useChatRoomLogic(chatId, isGlobal, friendId, chatName, navigation) {
@@ -35,7 +34,7 @@ export default function useChatRoomLogic(chatId, isGlobal, friendId, chatName, n
     return () => unsubscribe();
   }, [chatId]);
 
-  // 📝 TEXT MESSAGE LOGIC (LOCKED & RESTORED GLOBAL LIMIT)
+  // 📝 TEXT MESSAGE LOGIC (LOCKED)
   const handleSend = async () => {
     if (!inputText.trim() || !auth.currentUser) return;
     const msgText = inputText.trim();
@@ -71,9 +70,8 @@ export default function useChatRoomLogic(chatId, isGlobal, friendId, chatName, n
     }
   };
 
-  // 📎 MEDIA SENDING LOGIC (UPDATED WITH QUALITY POPUP)
+  // 📎 MEDIA SENDING LOGIC (LOCKED)
   const handleMediaPick = async (mediaType) => {
-    // 🚀 Global Chat Media Block
     if (isGlobal) {
       Alert.alert('Not Allowed', 'Photos and Videos are not allowed in Global Chat.');
       return;
@@ -82,7 +80,7 @@ export default function useChatRoomLogic(chatId, isGlobal, friendId, chatName, n
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: mediaType === 'video' ? ImagePicker.MediaTypeOptions.Videos : ImagePicker.MediaTypeOptions.Images,
-        quality: 1, // Hamesha 1 rakho yaha, compress hum apne logic se karenge
+        quality: 1, 
       });
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
@@ -91,7 +89,6 @@ export default function useChatRoomLogic(chatId, isGlobal, friendId, chatName, n
         const actualMimeType = asset.mimeType; 
         const fileName = asset.fileName || fileUri.split('/').pop();
 
-        // 🚀 THE MAGIC POPUP: Ask for Quality
         Alert.alert(
           'Select Quality',
           'How would you like to send this file?',
@@ -113,7 +110,7 @@ export default function useChatRoomLogic(chatId, isGlobal, friendId, chatName, n
     }
   };
 
-  // 📄 DOCUMENT SENDING LOGIC (RESTORED GLOBAL BLOCK)
+  // 📄 DOCUMENT SENDING LOGIC (LOCKED)
   const handleDocumentPick = async () => {
     if (isGlobal) {
       Alert.alert('Not Allowed', 'Documents are not allowed in Global Chat.');
@@ -124,14 +121,14 @@ export default function useChatRoomLogic(chatId, isGlobal, friendId, chatName, n
       const result = await DocumentPicker.getDocumentAsync({ copyToCacheDirectory: true });
       if (result.assets && result.assets.length > 0) {
         const asset = result.assets[0];
-        await sendMediaMessage(asset.uri, 'file', asset.name, asset.mimeType, 'original'); // Docs humesha original jayenge
+        await sendMediaMessage(asset.uri, 'file', asset.name, asset.mimeType, 'original'); 
       }
     } catch (error) {
       console.log('Doc pick error:', error);
     }
   };
 
-  // 🚀 SAVE MEDIA TO CLOUDINARY (UPDATED WITH COMPRESSION & CODEC FIX)
+  // 🚀 SAVE MEDIA TO CLOUDINARY (UPDATED DEBUG ALERT ONLY)
   const sendMediaMessage = async (fileUri, type, fileName = '', actualMimeType = null, qualityMode = 'standard') => {
     try {
       setSending(true);
@@ -139,7 +136,6 @@ export default function useChatRoomLogic(chatId, isGlobal, friendId, chatName, n
 
       let processedUriToUpload = fileUri;
 
-      // 🚀 STEP 1: COMPRESS & CHECK 250MB LIMIT
       if (type === 'image' || type === 'video') {
         const processResult = await processMediaForUpload(fileUri, type, qualityMode);
         processedUriToUpload = processResult.processedUri;
@@ -147,7 +143,6 @@ export default function useChatRoomLogic(chatId, isGlobal, friendId, chatName, n
 
       const finalMimeType = actualMimeType || (type === 'video' ? 'video/mp4' : type === 'image' ? 'image/jpeg' : '*/*');
 
-      // 🚀 STEP 2: UPLOAD
       const uploadResult = await uploadToCloudinary({
         fileUri: processedUriToUpload,
         fileName: fileName,
@@ -159,10 +154,8 @@ export default function useChatRoomLogic(chatId, isGlobal, friendId, chatName, n
         throw new Error("Cloudinary upload failed, URL is null");
       }
 
-      // 🚀 STEP 3: VIDEO CODEC FIX (THE BLACK BOX KILLER)
       let finalUrl = uploadResult.secureUrl;
       if (type === 'video' && finalUrl.includes('/upload/')) {
-        // Ye jadoo Cloudinary ko bolta hai: "Bhai kaisa bhi video ho, usko sab phone me chalne wala MP4 bana do"
         finalUrl = finalUrl.replace('/upload/', '/upload/f_mp4,vc_auto/');
       }
 
@@ -173,9 +166,8 @@ export default function useChatRoomLogic(chatId, isGlobal, friendId, chatName, n
         }, { merge: true });
       }
 
-      // 🚀 STEP 4: SAVE REAL WORKING URL
       await addDoc(collection(db, 'chats', chatId, 'messages'), {
-        fileUri: finalUrl, // 🌍 Universally Playable URL
+        fileUri: finalUrl, 
         deleteToken: uploadResult.deleteToken || null, 
         publicId: uploadResult.publicId || null,
         fileName: fileName,
@@ -188,11 +180,11 @@ export default function useChatRoomLogic(chatId, isGlobal, friendId, chatName, n
 
     } catch (error) {
       console.log('Media Send Error:', error);
-      // 🚀 LIMIT ERROR ALERT
       if (error.message === 'FILE_TOO_LARGE') {
         Alert.alert('File Too Large', 'Original file exceeds 250MB limit. Please send as Standard.');
       } else {
-        Alert.alert('Upload Failed', 'Could not send media file.');
+        // 🚀 THE DEBUG HACK: Asli error ab screen par aayega
+        Alert.alert('Upload Failed', `Reason: ${error.message || JSON.stringify(error)}`);
       }
     } finally {
       setSending(false);
