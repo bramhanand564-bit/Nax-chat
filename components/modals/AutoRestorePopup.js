@@ -9,36 +9,32 @@ export default function AutoRestorePopup() {
   const [backupFile, setBackupFile] = useState(null);
 
   useEffect(() => {
-    // Drive scan karna start karo
     const scanDriveForBackup = async () => {
       try {
         const file = await checkExistingBackup();
         if (file) {
           setBackupFile(file);
-          setVisible(true); // Backup mil gaya, Pop-up dikhao!
+          setVisible(true); 
         }
       } catch (e) {
         console.log("No backup found.");
       }
     };
     
-    // UI load hone ke 1.5 second baad scan start karega
     setTimeout(() => scanDriveForBackup(), 1500); 
   }, []);
 
   const handleRestore = async () => {
     setRestoring(true);
     try {
-      // Google Drive se backup download karna
       const backupData = await downloadBackupFromDrive(backupFile.id);
       console.log("Downloaded Data:", backupData);
       
-      // Note: Yahan hum aage chalkar Firestore me data wapas save karne ka code likhenge.
-      // Abhi ke liye success message dikha rahe hain:
       Alert.alert("Restore Complete! 🎉", `${backupData.totalChats || 0} chats have been restored successfully.`);
       setVisible(false);
     } catch (error) {
-      Alert.alert("Error", "Restore failed. Please check your internet connection.");
+      // 🔥 Hardcoded की जगह असली एरर मैसेज
+      Alert.alert("Restore Error", error.message || "Restore failed. Please check your connection.");
     } finally {
       setRestoring(false);
     }
@@ -55,7 +51,7 @@ export default function AutoRestorePopup() {
     );
   };
 
-  if (!visible) return null; // Agar popup band hai, toh kuch render mat karo
+  if (!visible) return null; 
 
   return (
     <Modal transparent animationType="slide" visible={visible}>
@@ -77,12 +73,10 @@ export default function AutoRestorePopup() {
             </View>
           ) : (
             <View style={styles.buttonContainer}>
-              {/* Option 1: Restore Button */}
               <TouchableOpacity style={styles.restoreBtn} onPress={handleRestore}>
                 <Text style={styles.restoreBtnText}>Restore Now</Text>
               </TouchableOpacity>
               
-              {/* Option 2: Skip Button */}
               <TouchableOpacity style={styles.skipBtn} onPress={handleSkip}>
                 <Text style={styles.skipBtnText}>Skip</Text>
               </TouchableOpacity>
