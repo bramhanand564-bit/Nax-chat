@@ -2,12 +2,15 @@ import React, { useState } from 'react';
 import { View, Text, Switch, TouchableOpacity, ActivityIndicator, Alert, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../context/ThemeContext';
+import { auth, db } from '../../firebaseConfig';
+import { collection, getDocs, query, where } from 'firebase/firestore'; // 🔥 Firestore Imports
 import { uploadBackupToDrive } from '../../utils/googleDriveBackup';
 
 export default function BackupSection() {
   const { isDark } = useTheme();
   const [includeMedia, setIncludeMedia] = useState(false);
   const [isBackingUp, setIsBackingUp] = useState(false);
+  const user = auth.currentUser;
 
   const cardBg = isDark ? '#1E1E1E' : '#FFFFFF';
   const textMain = isDark ? '#FFFFFF' : '#000000';
@@ -15,13 +18,37 @@ export default function BackupSection() {
   const borderCol = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)';
 
   const handleBackup = async () => {
+    if (!user) return Alert.alert("Error", "Please login first!");
     setIsBackingUp(true);
+
     try {
-      const dummyChatData = { timestamp: new Date().toISOString(), settings: { includeMedia }, chats: [{ id: '1', text: 'Backup test!', sender: 'System' }] };
-      const result = await uploadBackupToDrive(dummyChatData, includeMedia);
-      Alert.alert("Backup Successful! ✅", `Data securely saved to Google Drive.`);
+      // 🔥 1. असली डेटाबेस (Firestore) से यूज़र की सारी चैट्स निकालना
+      const chatsRef = collection(db, 'chats'); 
+      const q = query(chatsRef, where('participants', 'array-contains', user.uid));
+      const querySnapshot = await getDocs(q);
+      
+      const realChats = [];
+      querySnapshot.forEach((doc) => {
+        realChats.push({ id: doc.id, ...doc.data() });
+      });
+
+      // 🔥 2. असली बैकअप फाइल तैयार करना
+      const realBackupData = {
+        userId: user.uid,
+        email: user.email,
+        timestamp: new Date().toISOString(),
+        settings: { includeMedia },
+        totalChats: realChats.length,
+        chats: realChats // असली चैट्स यहाँ जा रही हैं!
+      };
+
+      // 🔥 3. Drive में अपलोड करना
+      const result = await uploadBackupToDrive(realBackupData, includeMedia);
+      Alert.alert("Backup Successful! ✅", `${realChats.length} Chats securely saved to Google Drive.`);
+      
     } catch (error) {
-      Alert.alert("Backup Failed ❌", "Could not connect to Google Drive.");
+      console.error("Backup Error:", error);
+      Alert.alert("Backup Failed ❌", "Could not save data to Google Drive.");
     } finally {
       setIsBackingUp(false);
     }
@@ -43,7 +70,7 @@ export default function BackupSection() {
           <View style={[styles.iconWrap, { backgroundColor: '#007AFF' }]}>
             {isBackingUp ? <ActivityIndicator size="small" color="#FFF" /> : <Ionicons name="sync" size={20} color="#FFF" />}
           </View>
-          <Text style={[styles.settingText, { color: textMain }]}>{isBackingUp ? 'Backing up to Google Drive...' : 'Back up now'}</Text>
+          <Text style={[styles.settingText, { color: textMain }]}>{isBackingUp ? 'Backing up Real Data...' : 'Back up now'}</Text>
         </TouchableOpacity>
       </View>
     </View>
