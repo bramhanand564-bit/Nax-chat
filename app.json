@@ -64,6 +64,11 @@
         }
       ],
       "@react-native-google-signin/google-signin"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "YAHAN_APNA_PROJECT_ID_DALO"
+      }
+    }
   }
 }
