@@ -6,9 +6,11 @@ import { GoogleAuthProvider, signInWithCredential } from 'firebase/auth';
 import { doc, setDoc } from 'firebase/firestore';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 
-// तुम्हारा Firebase Web Client ID
+// 🔥 यहाँ Drive बैकअप के लिए scopes और offlineAccess ऐड किया गया है
 GoogleSignin.configure({
   webClientId: '138730719673-5vn0agd7hibmqd87b5a82l2q66dqnij9.apps.googleusercontent.com',
+  scopes: ['https://www.googleapis.com/auth/drive.appdata'],
+  offlineAccess: true, 
 });
 
 export default function GoogleLoginButton({ textMain, disabled }) {
