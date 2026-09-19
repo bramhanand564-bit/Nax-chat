@@ -22,6 +22,14 @@
           }
         },
         {
+          "client_id": "138730719673-po2bcvkg04ds9c038uauehc5a7ev8p4i.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.nax.chat",
+            "certificate_hash": "5e8f16062ea3cd2c4a0d547876baa6f38cabf625"
+          }
+        },
+        {
           "client_id": "138730719673-5vn0agd7hibmqd87b5a82l2q66dqnij9.apps.googleusercontent.com",
           "client_type": 3
         }
