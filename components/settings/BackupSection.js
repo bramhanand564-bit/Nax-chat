@@ -3,7 +3,7 @@ import { View, Text, Switch, TouchableOpacity, ActivityIndicator, Alert, StyleSh
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../context/ThemeContext';
 import { auth, db } from '../../firebaseConfig';
-import { collection, getDocs, query, where } from 'firebase/firestore'; // 🔥 Firestore Imports
+import { collection, getDocs, query, where } from 'firebase/firestore'; 
 import { uploadBackupToDrive } from '../../utils/googleDriveBackup';
 
 export default function BackupSection() {
@@ -22,7 +22,6 @@ export default function BackupSection() {
     setIsBackingUp(true);
 
     try {
-      // 🔥 1. असली डेटाबेस (Firestore) से यूज़र की सारी चैट्स निकालना
       const chatsRef = collection(db, 'chats'); 
       const q = query(chatsRef, where('participants', 'array-contains', user.uid));
       const querySnapshot = await getDocs(q);
@@ -32,23 +31,22 @@ export default function BackupSection() {
         realChats.push({ id: doc.id, ...doc.data() });
       });
 
-      // 🔥 2. असली बैकअप फाइल तैयार करना
       const realBackupData = {
         userId: user.uid,
         email: user.email,
         timestamp: new Date().toISOString(),
         settings: { includeMedia },
         totalChats: realChats.length,
-        chats: realChats // असली चैट्स यहाँ जा रही हैं!
+        chats: realChats 
       };
 
-      // 🔥 3. Drive में अपलोड करना
       const result = await uploadBackupToDrive(realBackupData, includeMedia);
       Alert.alert("Backup Successful! ✅", `${realChats.length} Chats securely saved to Google Drive.`);
       
     } catch (error) {
       console.error("Backup Error:", error);
-      Alert.alert("Backup Failed ❌", "Could not save data to Google Drive.");
+      // 🔥 Hardcoded की जगह असली एरर मैसेज
+      Alert.alert("Backup Failed ❌", error.message || "An error occurred while saving to Google Drive.");
     } finally {
       setIsBackingUp(false);
     }
