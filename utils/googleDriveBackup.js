@@ -5,14 +5,12 @@ const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.appdata';
 // 1. Google से Access Token लेना (with Explicit Scope Request)
 export const getGoogleDriveToken = async () => {
   try {
-    // 🔥 STEP 1: Explicitly request Drive scope BEFORE getting the token
     try {
       await GoogleSignin.addScopes({ scopes: [DRIVE_SCOPE] });
     } catch (scopeError) {
       console.log("Scope add notice:", scopeError);
     }
 
-    // 🔥 STEP 2: Get token after ensuring scope is added
     const tokens = await GoogleSignin.getTokens();
     
     if (!tokens || !tokens.accessToken) {
@@ -26,28 +24,39 @@ export const getGoogleDriveToken = async () => {
   }
 };
 
-// 2. Drive में बैकअप फाइल अपलोड करना (App Data Folder)
+// 2. Drive में बैकअप फाइल अपलोड करना (React Native Fix - No Blob/FormData)
 export const uploadBackupToDrive = async (backupData, includeMedia = false) => {
   try {
     const accessToken = await getGoogleDriveToken();
     
-    const fileContent = JSON.stringify(backupData);
     const metadata = {
       name: 'nax_chat_backup.json',
       parents: ['appDataFolder'], 
     };
 
-    const form = new FormData();
-    form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
-    form.append('file', new Blob([fileContent], { type: 'application/json' }));
+    // 🔥 React Native Fix: FormData/Blob की जगह Raw Multipart String
+    const boundary = 'nax_chat_backup_boundary';
+    const delimiter = "\r\n--" + boundary + "\r\n";
+    const close_delim = "\r\n--" + boundary + "--";
+
+    const multipartRequestBody =
+      delimiter +
+      'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
+      JSON.stringify(metadata) +
+      delimiter +
+      'Content-Type: application/json\r\n\r\n' +
+      JSON.stringify(backupData) +
+      close_delim;
 
     const response = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
       method: 'POST',
-      headers: { Authorization: `Bearer ${accessToken}` },
-      body: form,
+      headers: { 
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': `multipart/related; boundary=${boundary}`
+      },
+      body: multipartRequestBody,
     });
 
-    // 🔥 STEP 3: Check actual HTTP response from Google Drive
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
       const errorMessage = errorData?.error?.message || response.statusText || 'Unknown Drive API Error';
@@ -60,7 +69,10 @@ export const uploadBackupToDrive = async (backupData, includeMedia = false) => {
 
   } catch (error) {
     console.error("Backup Upload Failed:", error);
-    throw error; // UI को असली एरर भेजेंगे
+    if (error.message.includes('Network request failed')) {
+       throw new Error("Network Error: Please check your internet connection.");
+    }
+    throw error; 
   }
 };
 
