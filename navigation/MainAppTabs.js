@@ -9,6 +9,9 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 
+// 🔥 NAYA IMPORT: Auto-Restore Popup yahan add kiya hai
+import AutoRestorePopup from '../components/modals/AutoRestorePopup';
+
 // 🚀 FIXED: Using WalletScreen instead of SettingsScreen
 import ChatsScreen from '../screens/ChatsScreen';
 import PortalHome from '../portal/PortalHome';
@@ -105,6 +108,9 @@ export default function MainAppTabs({ navigation }) {
           );
         })}
       </View>
+      
+      {/* 🔥 NAYA POPUP: App khulte hi ye background me scan karega aur popup dikhayega */}
+      <AutoRestorePopup />
       
     </SafeAreaView>
   );
