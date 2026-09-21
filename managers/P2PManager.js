@@ -6,6 +6,56 @@ import { collection, query, where, onSnapshot, addDoc, serverTimestamp } from 'f
 import { db } from '../firebaseConfig';
 import { acceptP2PTransfer, attachFileReceiver, saveReceivedFile, markP2PTransferFailed, markP2PTransferCompleted } from '../utils/webrtcFileTransfer';
 
+// 🚀 ADDED FOR SUPER APP: webrtcHelper for Watch Party & Game Sync
+import webrtcHelper from '../utils/webrtcHelper'; 
+
+// ==========================================
+// 🎮 NAX PORTAL SYNC ENGINE (New Feature)
+// ==========================================
+// इसे अलग से export कर रहे हैं ताकि WebPortalScreen इसे सीधा यूज़ कर सके
+export const PortalSyncEngine = {
+  activeRoomId: null,
+
+  joinPortalRoom: async (roomId, user, onSyncUpdate) => {
+    console.log(`[Portal Engine] ${user?.displayName || 'User'} joining Room: ${roomId}`);
+    PortalSyncEngine.activeRoomId = roomId;
+    
+    // WebRTC रूम से कनेक्ट करना
+    webrtcHelper.connectToRoom(roomId, user?.uid, (peerId, message) => {
+      try {
+        const parsedMessage = JSON.parse(message);
+        if (parsedMessage.type === 'PORTAL_SYNC') {
+          console.log(`[Portal Engine] Sync data received from ${peerId}:`, parsedMessage.data);
+          onSyncUpdate(parsedMessage.data); 
+        }
+      } catch (error) {
+        console.error("Error parsing P2P message:", error);
+      }
+    });
+  },
+
+  broadcastPortalState: (syncData) => {
+    if (!PortalSyncEngine.activeRoomId) {
+      console.warn("Cannot broadcast: Not in a Portal Room.");
+      return;
+    }
+    const payload = JSON.stringify({ type: 'PORTAL_SYNC', data: syncData });
+    webrtcHelper.broadcast(PortalSyncEngine.activeRoomId, payload);
+    console.log(`[Portal Engine] State Broadcasted:`, syncData);
+  },
+
+  leaveRoom: () => {
+    if (PortalSyncEngine.activeRoomId) {
+      webrtcHelper.disconnect(PortalSyncEngine.activeRoomId);
+      PortalSyncEngine.activeRoomId = null;
+      console.log("[Portal Engine] Left Portal Room");
+    }
+  }
+};
+
+// ==========================================
+// 🔒 ORIGINAL FILE TRANSFER MANAGER (Untouched)
+// ==========================================
 export default function P2PManager({ user }) {
   const activeTransfers = useRef(new Set());
 
