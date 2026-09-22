@@ -1,123 +1,135 @@
 import React from 'react';
-import { View, Text, Image, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../context/ThemeContext';
 
-export default function PortalAppCard({ appData, onPress }) {
+export default function PortalAppCard({ item, navigation }) {
   const { isDark } = useTheme();
-  
-  // Dynamic Colors
-  const cardBg = isDark ? '#1A222C' : '#FFFFFF';
-  const textMain = isDark ? '#FFFFFF' : '#000000';
-  const textSub = isDark ? '#888888' : '#666666';
-  const borderCol = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)';
-  const accentCol = '#087EFF'; // Nax Blue
 
-  // Agar appData pass nahi hua, toh dummy data dikhayega (Testing ke liye)
-  const data = appData || {
-    name: 'Nax Ludo Multi',
-    developer: '@brahmanand',
-    icon: 'https://via.placeholder.com/150/087EFF/FFFFFF?text=Ludo',
-    rating: '4.8',
-    users: '12K',
-    type: 'Game'
+  // 🎨 Super Glassy, Zero-Neon Palette
+  const bg = isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(255, 255, 255, 0.85)';
+  const borderCol = isDark ? 'rgba(255, 255, 255, 0.07)' : 'rgba(0, 0, 0, 0.04)';
+  const textMain = isDark ? '#F5F5F7' : '#1C1C1E';
+  const textSub = isDark ? '#8E8E93' : '#6C6C70';
+  
+  // Action Button Colors
+  const actionBg = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(8, 126, 255, 0.1)';
+  const actionText = isDark ? '#FFFFFF' : '#087EFF';
+
+  // 🧠 Smart Identification Logic (Real DB Data Mapping)
+  const isBot = item.type === 'bot' || item.type === 'ai-agent' || item.rules || item.systemPrompt;
+  const itemName = item.name || item.botName || 'Unknown';
+  const creatorName = item.creator || item.creatorName || 'Developer';
+  
+  // Auto-generate avatar if no custom icon is provided
+  const avatarUrl = item.icon || `https://ui-avatars.com/api/?name=${itemName.replace(' ', '+')}&background=random&color=fff&bold=true`;
+
+  // 🚀 The Router Logic
+  const handlePress = () => {
+    if (isBot) {
+      // Send to our 100% Real AI Chat Screen
+      navigation.navigate('BotChatScreen', { botData: item });
+    } else {
+      // Send to our Secure Sandbox Renderer
+      navigation.navigate('WebPortalScreen', {
+        title: itemName,
+        url: item.url,
+        htmlCode: item.code, // Nax Studio (AI Generated) code goes here
+        isPremium: item.isPremium || false
+      });
+    }
   };
 
   return (
-    <TouchableOpacity 
-      activeOpacity={0.7} 
-      style={[styles.card, { backgroundColor: cardBg, borderColor: borderCol }]}
-      onPress={() => onPress && onPress(data)}
-    >
-      {/* 🖼️ Mini-App Icon */}
-      <Image source={{ uri: data.icon }} style={styles.appIcon} />
+    <View style={[styles.card, { backgroundColor: bg, borderColor: borderCol }]}>
       
-      {/* 📝 Mini-App Details */}
-      <View style={styles.infoContainer}>
-        <Text style={[styles.appName, { color: textMain }]} numberOfLines={1}>
-          {data.name}
-        </Text>
-        <Text style={[styles.developer, { color: textSub }]} numberOfLines={1}>
-          By {data.developer} • {data.type}
-        </Text>
+      {/* 🖼️ Left Side: Avatar & Info */}
+      <View style={styles.leftContent}>
+        <Image source={{ uri: avatarUrl }} style={styles.icon} />
         
-        {/* ⭐ Rating & Users */}
-        <View style={styles.statsRow}>
-          <View style={styles.ratingBox}>
-            <Ionicons name="star" size={12} color="#FF9500" />
-            <Text style={styles.ratingText}>{data.rating}</Text>
+        <View style={styles.info}>
+          <View style={styles.titleRow}>
+            <Text style={[styles.title, { color: textMain }]} numberOfLines={1}>{itemName}</Text>
+            {/* Verified Tick for Ecosystem Apps */}
+            <Ionicons name="checkmark-circle" size={14} color="#087EFF" style={{ marginLeft: 4, marginTop: 2 }} />
           </View>
-          <Text style={[styles.usersText, { color: textSub }]}>• {data.users} players</Text>
+          
+          <Text style={[styles.creator, { color: textSub }]} numberOfLines={1}>
+            {item.category || (isBot ? 'AI Agent' : 'Mini-App')} • @{creatorName}
+          </Text>
         </View>
       </View>
 
-      {/* 🚀 Open / Play Button */}
-      <View style={[styles.playButton, { backgroundColor: 'rgba(8, 126, 255, 0.1)' }]}>
-        <Text style={[styles.playText, { color: accentCol }]}>Open</Text>
-      </View>
-    </TouchableOpacity>
+      {/* 🖱️ Right Side: Smart Action Button */}
+      <TouchableOpacity
+        style={[styles.actionBtn, { backgroundColor: actionBg }]}
+        onPress={handlePress}
+        activeOpacity={0.7}
+      >
+        <Text style={[styles.actionBtnText, { color: actionText }]}>
+          {isBot ? 'Chat' : 'Open'}
+        </Text>
+      </TouchableOpacity>
+      
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  card: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 15,
-    borderRadius: 18,
+  card: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    justifyContent: 'space-between', 
+    padding: 14, 
+    marginBottom: 12, 
+    borderRadius: 20, 
     borderWidth: 1,
-    marginBottom: 12,
-    marginHorizontal: 20,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 5,
+    shadowColor: '#000', 
+    shadowOffset: { width: 0, height: 4 }, 
+    shadowOpacity: 0.03, 
+    shadowRadius: 12, 
+    elevation: 1 
   },
-  appIcon: {
-    width: 60,
-    height: 60,
-    borderRadius: 16,
-    marginRight: 15,
+  leftContent: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    flex: 1, 
+    marginRight: 10 
   },
-  infoContainer: {
+  icon: { 
+    width: 46, 
+    height: 46, 
+    borderRadius: 14, 
+    marginRight: 14,
+    backgroundColor: '#333'
+  },
+  info: { 
     flex: 1,
-    justifyContent: 'center',
+    justifyContent: 'center'
   },
-  appName: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    marginBottom: 4,
+  titleRow: { 
+    flexDirection: 'row', 
+    alignItems: 'center' 
   },
-  developer: {
-    fontSize: 12,
-    marginBottom: 6,
+  title: { 
+    fontSize: 16, 
+    fontWeight: '700', 
+    letterSpacing: -0.2 
   },
-  statsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  creator: { 
+    fontSize: 12, 
+    fontWeight: '500', 
+    marginTop: 3 
   },
-  ratingBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  actionBtn: { 
+    paddingHorizontal: 18, 
+    paddingVertical: 8, 
+    borderRadius: 14,
+    minWidth: 70,
+    alignItems: 'center'
   },
-  ratingText: {
-    fontSize: 12,
-    fontWeight: 'bold',
-    color: '#FF9500',
-    marginLeft: 4,
-  },
-  usersText: {
-    fontSize: 11,
-    marginLeft: 8,
-  },
-  playButton: {
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 20,
-  },
-  playText: {
-    fontSize: 13,
-    fontWeight: 'bold',
+  actionBtnText: { 
+    fontWeight: '700', 
+    fontSize: 13 
   }
 });
