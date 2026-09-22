@@ -1,6 +1,6 @@
 // ==========================================
 // FILE: portal/PortalHome.js
-// NAX SUPER APP — PORTAL HOME
+// NAX SUPER APP — PORTAL HOME (FUTURISTIC GLASS)
 // ==========================================
 
 import React, { useCallback, useState } from 'react';
@@ -12,20 +12,35 @@ import {
   Text,
   TouchableOpacity,
   View,
+  SafeAreaView,
+  StatusBar,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { useTheme } from '../context/ThemeContext';
 
 import { MiniAppAPI } from '../api/MiniAppAPI';
 import { BotAPI } from '../api/BotAPI';
 import PortalCard from './PortalCard';
 
 const PortalHome = ({ navigation }) => {
+  const { isDark } = useTheme();
+
   const [apps, setApps] = useState([]);
   const [bots, setBots] = useState([]);
-
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
 
+  // 🎨 Super Glassy, No-Neon, Futuristic Palette
+  const bg = isDark ? '#0A0A0C' : '#F2F2F7';
+  const textMain = isDark ? '#F5F5F7' : '#1C1C1E';
+  const textSub = isDark ? '#8E8E93' : '#6C6C70';
+  const cardBg = isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(255, 255, 255, 0.75)';
+  const cardBorder = isDark ? 'rgba(255, 255, 255, 0.07)' : 'rgba(0, 0, 0, 0.04)';
+  const studioBg = isDark ? '#141416' : '#1C1C1E';
+  const studioBorder = isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)';
+
+  // 1️⃣ ORIGINAL LOGIC (UNTOUCHED / SAFE)
   const fetchPortalData = useCallback(async () => {
     setError('');
 
@@ -106,319 +121,354 @@ const PortalHome = ({ navigation }) => {
     />
   );
 
+  // 🌟 LOADING STATE (Glassy)
   if (loading) {
     return (
-      <View style={styles.centerContainer}>
-        <ActivityIndicator size="large" />
-        <Text style={styles.loadingText}>
-          Fetching ecosystem...
+      <View style={[styles.centerContainer, { backgroundColor: bg }]}>
+        <ActivityIndicator size="large" color={textMain} />
+        <Text style={[styles.loadingText, { color: textSub }]}>
+          Connecting to Nax Mesh...
         </Text>
       </View>
     );
   }
 
-  return (
-    <View style={styles.container}>
+  // 🌟 HEADER COMPONENT (To keep FlatList smooth)
+  const renderHeader = () => (
+    <View>
+      {/* Sleek Futuristic Title & Reload */}
       <View style={styles.header}>
         <View>
-          <Text style={styles.title}>Nax Portal</Text>
-          <Text style={styles.subtitle}>
+          <Text style={[styles.headerSubtitle, { color: textSub }]}>PORTAL</Text>
+          <Text style={[styles.title, { color: textMain }]}>Nax Portal</Text>
+          <Text style={[styles.subtitle, { color: textSub }]}>
             Apps, Bots, Games & Tools
           </Text>
         </View>
 
         <TouchableOpacity
-          style={styles.refreshButton}
+          style={[styles.refreshButton, { backgroundColor: cardBg, borderColor: cardBorder }]}
           onPress={handleRefresh}
+          activeOpacity={0.7}
         >
-          <Text style={styles.refreshText}>↻</Text>
+          <Ionicons name="reload" size={16} color={textMain} />
         </TouchableOpacity>
       </View>
 
+      {/* Futuristic Glass Action Buttons (Row 1) */}
       <View style={styles.actionRow}>
         <TouchableOpacity
-          style={styles.actionButton}
+          style={[styles.actionButton, { backgroundColor: cardBg, borderColor: cardBorder }]}
           onPress={handleOpenSearch}
+          activeOpacity={0.7}
         >
-          <Text style={styles.actionText}>Search</Text>
+          <Ionicons name="search-outline" size={16} color={textSub} style={{ marginRight: 6 }} />
+          <Text style={[styles.actionText, { color: textMain }]}>Search</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={styles.actionButton}
+          style={[styles.actionButton, { backgroundColor: cardBg, borderColor: cardBorder }]}
           onPress={handleOpenCategories}
+          activeOpacity={0.7}
         >
-          <Text style={styles.actionText}>Categories</Text>
+          <Ionicons name="grid-outline" size={16} color={textSub} style={{ marginRight: 6 }} />
+          <Text style={[styles.actionText, { color: textMain }]}>Categories</Text>
         </TouchableOpacity>
       </View>
 
+      {/* Futuristic Glass Action Buttons (Row 2) */}
       <View style={styles.actionRow}>
         <TouchableOpacity
-          style={styles.actionButton}
+          style={[styles.actionButton, { backgroundColor: cardBg, borderColor: cardBorder }]}
           onPress={handleOpenFeatured}
+          activeOpacity={0.7}
         >
-          <Text style={styles.actionText}>Featured</Text>
+          <Ionicons name="star-outline" size={16} color={textSub} style={{ marginRight: 6 }} />
+          <Text style={[styles.actionText, { color: textMain }]}>Featured</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={styles.actionButton}
+          style={[styles.actionButton, { backgroundColor: cardBg, borderColor: cardBorder }]}
           onPress={handleOpenTrending}
+          activeOpacity={0.7}
         >
-          <Text style={styles.actionText}>Trending</Text>
+          <Ionicons name="trending-up-outline" size={16} color={textSub} style={{ marginRight: 6 }} />
+          <Text style={[styles.actionText, { color: textMain }]}>Trending</Text>
         </TouchableOpacity>
       </View>
 
+      {/* Nax Studio Banner (Matte Glass, No Neon) */}
       <TouchableOpacity
-        style={styles.studioButton}
+        style={[styles.studioButton, { backgroundColor: studioBg, borderColor: studioBorder }]}
         onPress={handleOpenStudio}
+        activeOpacity={0.85}
       >
-        <Text style={styles.studioTitle}>
-          Nax Studio
-        </Text>
-
-        <Text style={styles.studioSubtitle}>
-          Create your own Mini-App with AI
-        </Text>
+        <View style={styles.studioContent}>
+          <Text style={styles.studioTitle}>Nax Studio</Text>
+          <Text style={styles.studioSubtitle}>
+            Create your own Mini-App with AI
+          </Text>
+        </View>
+        <View style={styles.studioArrow}>
+          <Ionicons name="chevron-forward" size={20} color="#FFF" />
+        </View>
       </TouchableOpacity>
 
+      {/* Error Box */}
       {error ? (
-        <View style={styles.errorBox}>
-          <Text style={styles.errorText}>
-            {error}
-          </Text>
-
+        <View style={[styles.errorBox, { backgroundColor: 'rgba(255, 59, 48, 0.08)', borderColor: 'rgba(255, 59, 48, 0.2)' }]}>
+          <Text style={styles.errorText}>{error}</Text>
           <TouchableOpacity
             style={styles.retryButton}
             onPress={fetchPortalData}
           >
-            <Text style={styles.retryText}>
-              Retry
-            </Text>
+            <Text style={styles.retryText}>Retry Connection</Text>
           </TouchableOpacity>
         </View>
       ) : null}
 
+      {/* Section Header */}
       <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>
+        <Text style={[styles.sectionTitle, { color: textMain }]}>
           Latest Ecosystem
         </Text>
-
-        <Text style={styles.countText}>
+        <Text style={[styles.countText, { color: textSub }]}>
           {ecosystemItems.length} items
         </Text>
       </View>
-
-      {ecosystemItems.length === 0 ? (
-        <View style={styles.emptyContainer}>
-          <Text style={styles.emptyTitle}>
-            No apps or bots yet
-          </Text>
-
-          <Text style={styles.emptyText}>
-            Create something using Nax Studio.
-          </Text>
-
-          <TouchableOpacity
-            style={styles.createButton}
-            onPress={handleOpenStudio}
-          >
-            <Text style={styles.createButtonText}>
-              Create Mini-App
-            </Text>
-          </TouchableOpacity>
-        </View>
-      ) : (
-        <FlatList
-          data={ecosystemItems}
-          keyExtractor={(item, index) =>
-            String(item.id || item.uid || item.slug || index)
-          }
-          renderItem={renderItem}
-          contentContainerStyle={styles.listContent}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={handleRefresh}
-            />
-          }
-          showsVerticalScrollIndicator={false}
-        />
-      )}
     </View>
+  );
+
+  return (
+    <SafeAreaView style={[styles.container, { backgroundColor: bg }]}>
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
+
+      <FlatList
+        data={ecosystemItems}
+        keyExtractor={(item, index) =>
+          String(item.id || item.uid || item.slug || index)
+        }
+        renderItem={renderItem}
+        ListHeaderComponent={renderHeader}
+        contentContainerStyle={styles.listContent}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor={textMain}
+          />
+        }
+        showsVerticalScrollIndicator={false}
+        ListEmptyComponent={
+          <View style={[styles.emptyContainer, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+            <Ionicons name="cube-outline" size={36} color={textSub} style={{ marginBottom: 10 }} />
+            <Text style={[styles.emptyTitle, { color: textMain }]}>
+              Ecosystem Empty
+            </Text>
+            <Text style={[styles.emptyText, { color: textSub }]}>
+              Be the first to publish a mini-app or bot using Nax Studio.
+            </Text>
+            <TouchableOpacity
+              style={[styles.createButton, { backgroundColor: textMain }]}
+              onPress={handleOpenStudio}
+            >
+              <Text style={[styles.createButtonText, { color: isDark ? '#000' : '#FFF' }]}>
+                Launch Studio
+              </Text>
+            </TouchableOpacity>
+          </View>
+        }
+      />
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
-    paddingHorizontal: 16,
-    paddingTop: 16,
   },
-
+  listContent: {
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 100,
+  },
   centerContainer: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#fff',
   },
-
   loadingText: {
-    marginTop: 12,
-    fontSize: 15,
-    color: '#666',
+    marginTop: 14,
+    fontSize: 13,
+    fontWeight: '600',
+    letterSpacing: 0.5,
   },
 
+  // Header
   header: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    marginBottom: 20,
+  },
+  headerSubtitle: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1.5,
+    marginBottom: 2,
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: '800',
+    letterSpacing: -0.5,
+  },
+  subtitle: {
+    marginTop: 3,
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  refreshButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+  },
+
+  // Action Buttons (Glass Pills)
+  actionRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 12,
+  },
+  actionButton: {
+    flex: 1,
+    flexDirection: 'row',
+    height: 48,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+  },
+  actionText: {
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: -0.2,
+  },
+
+  // Studio Banner
+  studioButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 16,
+    marginTop: 6,
+    marginBottom: 26,
+    padding: 18,
+    borderRadius: 20,
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    elevation: 3,
   },
-
-  title: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: '#111',
-  },
-
-  subtitle: {
-    marginTop: 4,
-    fontSize: 14,
-    color: '#777',
-  },
-
-  refreshButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#f1f1f1',
-  },
-
-  refreshText: {
-    fontSize: 24,
-    color: '#222',
-  },
-
-  actionRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginBottom: 10,
-  },
-
-  actionButton: {
+  studioContent: {
     flex: 1,
-    paddingVertical: 12,
-    borderRadius: 10,
-    alignItems: 'center',
-    backgroundColor: '#f2f2f2',
   },
-
-  actionText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#222',
-  },
-
-  studioButton: {
-    marginTop: 4,
-    marginBottom: 20,
-    padding: 16,
-    borderRadius: 14,
-    backgroundColor: '#111',
-  },
-
   studioTitle: {
     fontSize: 18,
-    fontWeight: '700',
-    color: '#fff',
+    fontWeight: '800',
+    color: '#FFF',
+    letterSpacing: -0.3,
   },
-
   studioSubtitle: {
-    marginTop: 5,
-    fontSize: 13,
-    color: '#ccc',
+    marginTop: 4,
+    fontSize: 12,
+    color: 'rgba(255, 255, 255, 0.65)',
+    fontWeight: '500',
   },
-
-  errorBox: {
-    padding: 14,
+  studioArrow: {
+    width: 32,
+    height: 32,
     borderRadius: 12,
-    marginBottom: 16,
-    backgroundColor: '#fff1f1',
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 10,
   },
 
+  // Error Card
+  errorBox: {
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    marginBottom: 20,
+  },
   errorText: {
-    fontSize: 14,
-    color: '#b00020',
+    fontSize: 13,
+    color: '#FF3B30',
+    fontWeight: '600',
   },
-
   retryButton: {
     alignSelf: 'flex-start',
     marginTop: 10,
     paddingHorizontal: 14,
-    paddingVertical: 8,
+    paddingVertical: 6,
     borderRadius: 8,
-    backgroundColor: '#b00020',
+    backgroundColor: '#FF3B30',
   },
-
   retryText: {
-    color: '#fff',
-    fontWeight: '600',
+    color: '#FFF',
+    fontWeight: '700',
+    fontSize: 12,
   },
 
+  // Section Header
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 10,
+    marginBottom: 14,
   },
-
   sectionTitle: {
-    fontSize: 20,
+    fontSize: 17,
     fontWeight: '700',
-    color: '#111',
+    letterSpacing: -0.3,
   },
-
   countText: {
-    fontSize: 13,
-    color: '#777',
+    fontSize: 12,
+    fontWeight: '600',
   },
 
-  listContent: {
-    paddingBottom: 30,
-  },
-
+  // Empty Box
   emptyContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 50,
+    padding: 32,
+    borderRadius: 24,
+    borderWidth: 1,
+    marginTop: 10,
   },
-
   emptyTitle: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '700',
-    color: '#222',
   },
-
   emptyText: {
     marginTop: 6,
-    fontSize: 14,
-    color: '#777',
+    fontSize: 13,
     textAlign: 'center',
+    lineHeight: 18,
   },
-
   createButton: {
     marginTop: 18,
-    paddingHorizontal: 18,
-    paddingVertical: 11,
-    borderRadius: 10,
-    backgroundColor: '#111',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 14,
   },
-
   createButtonText: {
-    color: '#fff',
-    fontWeight: '600',
+    fontWeight: '700',
+    fontSize: 13,
   },
 });
 
