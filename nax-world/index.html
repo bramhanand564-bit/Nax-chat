@@ -1,0 +1,537 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+  <meta name="theme-color" content="#07111f">
+  <title>NAX World — 3D Mobile Prototype</title>
+  <style>
+    :root{
+      --panel:rgba(7,17,31,.78);
+      --panel-2:rgba(13,29,50,.82);
+      --line:rgba(255,255,255,.12);
+      --text:#f5f8ff;
+      --muted:#a9b8cf;
+      --accent:#7dd3fc;
+      --good:#86efac;
+    }
+    *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+    html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#050b14;color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+    #game{position:fixed;inset:0;width:100%;height:100%;touch-action:none;display:block}
+    .hud{position:fixed;inset:0;pointer-events:none}
+    .topbar{
+      position:absolute;top:env(safe-area-inset-top,12px);left:12px;right:12px;
+      display:flex;justify-content:space-between;gap:10px;align-items:flex-start
+    }
+    .card{
+      background:var(--panel);border:1px solid var(--line);backdrop-filter:blur(12px);
+      border-radius:16px;padding:10px 12px;box-shadow:0 8px 28px rgba(0,0,0,.22)
+    }
+    .brand{font-weight:800;letter-spacing:.08em;font-size:13px}
+    .sub{font-size:11px;color:var(--muted);margin-top:2px}
+    .stats{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+    .pill{font-size:12px;border-radius:999px;padding:7px 10px;background:rgba(255,255,255,.07);border:1px solid var(--line);white-space:nowrap}
+    .pill b{color:var(--accent)}
+    #toast{
+      position:absolute;left:50%;top:72px;transform:translateX(-50%) translateY(-8px);
+      opacity:0;transition:opacity .2s,transform .2s;max-width:calc(100% - 40px);text-align:center;
+      pointer-events:none
+    }
+    #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+    .bottom{
+      position:absolute;left:12px;right:12px;bottom:max(12px,env(safe-area-inset-bottom,12px));
+      display:flex;justify-content:space-between;align-items:flex-end;gap:12px
+    }
+    #joystick{
+      width:132px;height:132px;border-radius:50%;background:rgba(7,17,31,.42);
+      border:1px solid rgba(255,255,255,.16);position:relative;pointer-events:auto;touch-action:none;
+      box-shadow:inset 0 0 24px rgba(0,0,0,.16)
+    }
+    #stick{
+      width:56px;height:56px;border-radius:50%;position:absolute;left:38px;top:38px;
+      background:rgba(125,211,252,.18);border:1px solid rgba(125,211,252,.45)
+    }
+    .actions{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;justify-content:flex-end}
+    .btn{
+      min-width:64px;min-height:56px;border-radius:16px;background:var(--panel-2);
+      color:var(--text);border:1px solid var(--line);font-weight:700;font-size:12px;
+      pointer-events:auto;touch-action:manipulation
+    }
+    .btn:active{transform:scale(.96)}
+    .btn.primary{border-color:rgba(125,211,252,.5);background:rgba(30,74,108,.68)}
+    #interact{display:none}
+    .hint{
+      position:absolute;left:50%;bottom:165px;transform:translateX(-50%);
+      font-size:11px;color:var(--muted);text-align:center;max-width:85%
+    }
+    #loading{
+      position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+      background:#050b14;z-index:5
+    }
+    #loading .card{max-width:320px;text-align:center}
+    .progress{height:8px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden;margin-top:12px}
+    .progress > i{display:block;height:100%;width:35%;background:var(--accent);transition:width .3s}
+    @media (min-width:700px){
+      #joystick{width:150px;height:150px}
+      #stick{width:62px;height:62px;left:44px;top:44px}
+      .btn{min-width:72px;min-height:60px}
+      .hint{bottom:180px}
+    }
+  </style>
+</head>
+<body>
+  <canvas id="game" aria-label="NAX World 3D game"></canvas>
+
+  <div id="loading">
+    <div class="card">
+      <div class="brand">NAX WORLD</div>
+      <div class="sub">3D Mobile Prototype • Vertical Slice</div>
+      <div id="loadingText" class="sub" style="margin-top:10px">Creating world…</div>
+      <div class="progress"><i id="loadingBar"></i></div>
+    </div>
+  </div>
+
+  <div class="hud">
+    <div class="topbar">
+      <div class="card">
+        <div class="brand">NAX WORLD</div>
+        <div class="sub">MOBILE 3D • BUILD 0.1</div>
+      </div>
+      <div class="stats">
+        <div class="pill">LV <b id="level">1</b></div>
+        <div class="pill">XP <b id="xp">0</b></div>
+        <div class="pill">NAX <b id="coins">0</b></div>
+      </div>
+    </div>
+
+    <div id="toast" class="card" aria-live="polite"></div>
+    <div class="hint">Left joystick = move • Swipe empty screen = camera • Jump = action</div>
+
+    <div class="bottom">
+      <div id="joystick" aria-label="Movement joystick">
+        <div id="stick"></div>
+      </div>
+      <div class="actions">
+        <button class="btn" id="interact">INTERACT</button>
+        <button class="btn" id="jump">JUMP</button>
+        <button class="btn primary" id="mode">RUN</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.js';
+
+    const canvas = document.getElementById('game');
+    const loading = document.getElementById('loading');
+    const loadingText = document.getElementById('loadingText');
+    const loadingBar = document.getElementById('loadingBar');
+    const levelEl = document.getElementById('level');
+    const xpEl = document.getElementById('xp');
+    const coinsEl = document.getElementById('coins');
+    const toastEl = document.getElementById('toast');
+    const joystickEl = document.getElementById('joystick');
+    const stickEl = document.getElementById('stick');
+    const jumpBtn = document.getElementById('jump');
+    const modeBtn = document.getElementById('mode');
+    const interactBtn = document.getElementById('interact');
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x07111f);
+    scene.fog = new THREE.Fog(0x07111f, 70, 250);
+
+    const camera = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.1, 500);
+    camera.position.set(0, 5.2, 9.5);
+
+    const renderer = new THREE.WebGLRenderer({
+      canvas,
+      antialias: true,
+      powerPreference: 'high-performance'
+    });
+    renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 1.5));
+    renderer.setSize(innerWidth, innerHeight, false);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.shadowMap.enabled = false;
+
+    const hemi = new THREE.HemisphereLight(0x9fc9ff, 0x263247, 1.6);
+    scene.add(hemi);
+    const sun = new THREE.DirectionalLight(0xffffff, 1.25);
+    sun.position.set(40, 70, 20);
+    scene.add(sun);
+
+    const world = new THREE.Group();
+    scene.add(world);
+
+    const clock = new THREE.Clock();
+    const player = new THREE.Group();
+    player.position.set(0, 0, 10);
+    world.add(player);
+
+    let level = 1;
+    let xp = 0;
+    let coins = 0;
+    let running = false;
+    let grounded = true;
+    let verticalVelocity = 0;
+    let yaw = Math.PI;
+    let pitch = 0.22;
+    let cameraDistance = 8.5;
+    let nearInteractive = null;
+
+    const move = {x:0,y:0};
+    const keys = {};
+    const temp = new THREE.Vector3();
+    const cameraTarget = new THREE.Vector3();
+    const cameraDesired = new THREE.Vector3();
+    const forward = new THREE.Vector3();
+    const right = new THREE.Vector3();
+
+    function mat(color, roughness=0.9, metalness=0) {
+      return new THREE.MeshStandardMaterial({color, roughness, metalness});
+    }
+
+    function addBox(parent, w,h,d, x,y,z, material) {
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), material);
+      mesh.position.set(x,y,z);
+      parent.add(mesh);
+      return mesh;
+    }
+
+    function addCylinder(parent, r,h,x,y,z, material, radial=12) {
+      const mesh = new THREE.Mesh(new THREE.CylinderGeometry(r,r,h,radial), material);
+      mesh.position.set(x,y,z);
+      parent.add(mesh);
+      return mesh;
+    }
+
+    function addTree(x,z,scale=1) {
+      const g = new THREE.Group();
+      const trunk = addCylinder(g,.25,.9,0,.45,0,mat(0x6b4b34),10);
+      const crown = new THREE.Mesh(new THREE.SphereGeometry(1.1,12,10),mat(0x2e7d55));
+      crown.position.y = 1.5;
+      crown.scale.set(scale,scale,scale);
+      g.position.set(x,0,z);
+      g.add(crown);
+      world.add(g);
+    }
+
+    function addBuilding(x,z,w,d,h,accent=0x2f4c69) {
+      const g = new THREE.Group();
+      g.position.set(x,0,z);
+      addBox(g,w,h,d,0,h/2,0,mat(0x1a2a3d));
+      const top = addBox(g,w*.9,.16,d*.9,0,h+.08,mat(accent));
+      top.position.y = h + .08;
+      const windowMat = mat(0x73c7ff,0.35,0.1);
+      for (let y=2;y<h-0.8;y+=2.2) {
+        for (let side=-1;side<=1;side+=2) {
+          for(let i=-1;i<=1;i++){
+            const xw = i * (w/4);
+            const win = addBox(g,.35,.75,.06,xw,y,side*(d/2+.03),windowMat);
+            win.userData.glow = true;
+          }
+        }
+      }
+      world.add(g);
+    }
+
+    function addStreetLight(x,z,flip=false) {
+      const g = new THREE.Group();
+      g.position.set(x,0,z);
+      addCylinder(g,.07,3.2,0,1.6,0,mat(0x334155),8);
+      const arm = addBox(g,1.0,.08,.08,flip?-0.42:0.42,3.2,0,mat(0x475569));
+      const lamp = new THREE.Mesh(new THREE.SphereGeometry(.12,8,6),mat(0xdff8ff,0.3,0));
+      lamp.position.set(flip?-0.9:0.9,3.1,0);
+      g.add(lamp);
+      world.add(g);
+    }
+
+    function addNeonGate(x,z) {
+      const g = new THREE.Group();
+      g.position.set(x,0,z);
+      const frameMat = mat(0x3b82f6,0.25,0.25);
+      addBox(g,.22,4,.22,-2,2,0,frameMat);
+      addBox(g,.22,4,.22,2,2,0,frameMat);
+      addBox(g,4.22,.22,.22,0,3.9,0,frameMat);
+      const core = addBox(g,3.8,2.8,.18,0,2,0,mat(0x101827,.3,.2));
+      core.userData.portal = true;
+      world.add(g);
+    }
+
+    function addCoin(x,z) {
+      const c = new THREE.Mesh(
+        new THREE.TorusGeometry(.36,.12,8,18),
+        mat(0xffd166,.35,.65)
+      );
+      c.position.set(x,1.2,z);
+      c.rotation.x = Math.PI/2;
+      c.userData.collectible = true;
+      world.add(c);
+      return c;
+    }
+
+    function addNPC(x,z) {
+      const g = new THREE.Group();
+      g.position.set(x,0,z);
+      const body = addCylinder(g,.36,.9,0,.7,0,mat(0x7c5cff),10);
+      const head = new THREE.Mesh(new THREE.SphereGeometry(.32,12,10),mat(0xffc7a0));
+      head.position.y=1.35; g.add(head);
+      g.userData.npc = true;
+      g.userData.home = new THREE.Vector3(x,0,z);
+      g.userData.seed = Math.random()*10;
+      world.add(g);
+      return g;
+    }
+
+    function buildWorld() {
+      const ground = addBox(world,180,.4,180,0,-.2,0,mat(0x152235));
+      const road = mat(0x1d2b3d);
+      addBox(world,18,.1,160,0,.02,0,road);
+      addBox(world,160,.1,14,0,.03,0,road);
+
+      for(let i=-70;i<=70;i+=12){
+        addBox(world,.35,.04,6,i,.09,0,mat(0xdce8f5));
+      }
+      for(let i=-70;i<=70;i+=12){
+        addBox(world,6,.04,.35,0,.09,i,mat(0xdce8f5));
+      }
+
+      addBuilding(-24,-28,22,20,11,0x0ea5e9);
+      addBuilding(30,-25,26,24,16,0x22c55e);
+      addBuilding(-30,28,24,22,14,0xa855f7);
+      addBuilding(28,30,20,26,19,0xf97316);
+
+      for(let z=-60;z<=60;z+=16){
+        addStreetLight(-10,z,false);
+        addStreetLight(10,z,true);
+      }
+
+      addNeonGate(0,-22);
+      addNPC(-4,3);
+      addNPC(5,6);
+
+      [[-4,-14],[5,-10],[-8,16],[9,20],[20,8],[-22,4]].forEach(([x,z])=>addCoin(x,z));
+      [[-38,-50],[-12,-48],[42,-45],[-44,42],[44,48],[-48,-6],[48,10]].forEach(([x,z])=>addTree(x,z,1.1));
+      loadingText.textContent = '3D city slice ready';
+      loadingBar.style.width = '85%';
+    }
+
+    function buildPlayer() {
+      const body = new THREE.Group();
+      const torso = addBox(body,.75,1.0,.5,0,.78,0,mat(0x39a6ff,0.8,.1));
+      torso.rotation.z = 0.02;
+      const head = new THREE.Mesh(new THREE.SphereGeometry(.34,14,12),mat(0xffc7a0));
+      head.position.y = 1.52;
+      body.add(head);
+      const visor = addBox(body,.5,.18,.04,0,1.52,-.31,mat(0x0b1320,.25,.5));
+      visor.rotation.x = -0.04;
+      const legMat = mat(0x223047);
+      addBox(body,.22,.72,.28,-.2,.15,0,legMat);
+      addBox(body,.22,.72,.28,.2,.15,0,legMat);
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(.56,.035,8,32),mat(0x7dd3fc,.3,.4));
+      ring.rotation.x = Math.PI/2;
+      ring.position.y = .04;
+      body.add(ring);
+      player.add(body);
+      player.userData.body = body;
+    }
+
+    function showToast(message){
+      toastEl.textContent = message;
+      toastEl.classList.add('show');
+      clearTimeout(showToast.t);
+      showToast.t = setTimeout(()=>toastEl.classList.remove('show'),1800);
+    }
+
+    function addXP(amount){
+      xp += amount;
+      if(xp >= 100){
+        level += Math.floor(xp/100);
+        xp = xp % 100;
+        showToast('Level up! NAX Level ' + level);
+      }
+      levelEl.textContent = level;
+      xpEl.textContent = xp;
+    }
+
+    function collectNearby(){
+      const objects = world.children;
+      let closest = null, best = 999;
+      for(const o of objects){
+        if(!o.userData.collectible) continue;
+        const dist = o.position.distanceTo(player.position);
+        if(dist < best){best = dist; closest = o;}
+      }
+      if(closest && best < 2.2){
+        world.remove(closest);
+        coins += 1;
+        coinsEl.textContent = coins;
+        addXP(15);
+        showToast('+1 NAX • +15 XP');
+        return true;
+      }
+      if(nearInteractive){
+        showToast('You found an interactive NAX point');
+        addXP(5);
+        return true;
+      }
+      return false;
+    }
+
+    function jump(){
+      if(grounded){
+        verticalVelocity = 7.2;
+        grounded = false;
+      }
+    }
+
+    function updatePlayer(dt){
+      const moveX = move.x + (keys.ArrowRight?1:0) - (keys.ArrowLeft?1:0);
+      const moveY = move.y + (keys.KeyW?1:0) - (keys.KeyS?1:0);
+      const input = Math.min(1, Math.hypot(moveX,moveY));
+      if(input > .001){
+        const ix = moveX / input, iz = -moveY / input;
+        const speed = (running?7.2:4.6);
+        forward.set(Math.sin(yaw),0,Math.cos(yaw));
+        right.set(Math.cos(yaw),0,-Math.sin(yaw));
+        temp.copy(forward).multiplyScalar(iz).addScaledVector(right,ix).normalize();
+        player.position.addScaledVector(temp,speed*input*dt);
+        player.rotation.y = Math.atan2(temp.x,temp.z);
+        const bob = Math.sin(performance.now()*0.012*(running?1.35:1))*0.03;
+        player.userData.body.position.y = bob;
+      }else{
+        player.userData.body.position.y *= 0.8;
+      }
+
+      verticalVelocity -= 18*dt;
+      player.position.y += verticalVelocity*dt;
+      if(player.position.y <= 0){
+        player.position.y = 0;
+        verticalVelocity = 0;
+        grounded = true;
+      }
+
+      player.position.x = THREE.MathUtils.clamp(player.position.x,-78,78);
+      player.position.z = THREE.MathUtils.clamp(player.position.z,-78,78);
+
+      nearInteractive = null;
+      for(const o of world.children){
+        if(o.userData.portal){
+          const dx = o.parent?.position?.x ?? o.position.x;
+        }
+      }
+      const gateDist = Math.hypot(player.position.x, player.position.z + 22);
+      if(gateDist < 5){
+        nearInteractive = {type:'portal'};
+      }
+      interactBtn.style.display = nearInteractive ? 'block' : 'none';
+    }
+
+    function updateNPCs(time){
+      for(const o of world.children){
+        if(!o.userData.npc) continue;
+        const h = o.userData.home;
+        o.position.x = h.x + Math.sin(time*.4 + o.userData.seed)*1.5;
+        o.position.z = h.z + Math.cos(time*.55 + o.userData.seed)*1.5;
+        o.rotation.y += 0.004;
+      }
+    }
+
+    function updateCamera(dt){
+      cameraTarget.copy(player.position);
+      cameraTarget.y += 1.2;
+      const cosP = Math.cos(pitch), sinP = Math.sin(pitch);
+      cameraDesired.set(
+        player.position.x - Math.sin(yaw)*cosP*cameraDistance,
+        player.position.y + 1.2 + sinP*cameraDistance,
+        player.position.z - Math.cos(yaw)*cosP*cameraDistance
+      );
+      camera.position.lerp(cameraDesired,1-Math.pow(.001,dt));
+      camera.lookAt(cameraTarget);
+    }
+
+    function animate(){
+      const dt = Math.min(clock.getDelta(),.033);
+      const t = clock.elapsedTime;
+      updatePlayer(dt);
+      updateNPCs(t);
+      updateCamera(dt);
+
+      for(const o of world.children){
+        if(o.userData.collectible) o.rotation.z += dt*1.9;
+      }
+
+      renderer.render(scene,camera);
+      requestAnimationFrame(animate);
+    }
+
+    // Keyboard support for testing on a phone with a keyboard / desktop later.
+    addEventListener('keydown',e=>{keys[e.code]=true; if(e.code==='Space') jump();});
+    addEventListener('keyup',e=>{keys[e.code]=false;});
+
+    // Virtual joystick.
+    let joyPointer = null;
+    function updateJoystick(clientX,clientY){
+      const r = joystickEl.getBoundingClientRect();
+      const cx = r.left+r.width/2, cy = r.top+r.height/2;
+      const max = r.width*.32;
+      let dx=clientX-cx, dy=clientY-cy;
+      const len=Math.hypot(dx,dy);
+      if(len>max){dx=dx/len*max;dy=dy/len*max;}
+      stickEl.style.transform = `translate(${dx}px,${dy}px)`;
+      move.x = dx/max;
+      move.y = -dy/max;
+    }
+    joystickEl.addEventListener('pointerdown',e=>{
+      joyPointer=e.pointerId; joystickEl.setPointerCapture(e.pointerId); updateJoystick(e.clientX,e.clientY);
+    });
+    joystickEl.addEventListener('pointermove',e=>{if(e.pointerId===joyPointer)updateJoystick(e.clientX,e.clientY);});
+    joystickEl.addEventListener('pointerup',e=>{
+      if(e.pointerId===joyPointer){joyPointer=null; move.x=0;move.y=0;stickEl.style.transform='translate(0,0)';}
+    });
+    joystickEl.addEventListener('pointercancel',()=>{joyPointer=null;move.x=0;move.y=0;stickEl.style.transform='translate(0,0)';});
+
+    jumpBtn.addEventListener('click',jump);
+    modeBtn.addEventListener('click',()=>{
+      running=!running;
+      modeBtn.textContent=running?'WALK':'RUN';
+    });
+    interactBtn.addEventListener('click',()=>{
+      if(nearInteractive?.type==='portal'){
+        showToast('NAX Portal detected • Portal travel is next phase');
+        addXP(10);
+      }else{
+        collectNearby();
+      }
+    });
+
+    // Swipe camera on the game area. Avoid joystick/buttons.
+    let swipePointer=null, lastX=0,lastY=0;
+    canvas.addEventListener('pointerdown',e=>{
+      swipePointer=e.pointerId; lastX=e.clientX; lastY=e.clientY;
+    });
+    canvas.addEventListener('pointermove',e=>{
+      if(e.pointerId!==swipePointer) return;
+      const dx=e.clientX-lastX, dy=e.clientY-lastY;
+      yaw -= dx*0.006;
+      pitch = THREE.MathUtils.clamp(pitch + dy*0.004,-0.05,0.8);
+      lastX=e.clientX; lastY=e.clientY;
+    });
+    canvas.addEventListener('pointerup',e=>{if(e.pointerId===swipePointer)swipePointer=null;});
+    canvas.addEventListener('pointercancel',()=>swipePointer=null);
+
+    addEventListener('resize',()=>{
+      camera.aspect=innerWidth/innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(innerWidth,innerHeight,false);
+      renderer.setPixelRatio(Math.min(devicePixelRatio||1,1.5));
+    });
+
+    buildWorld();
+    loadingBar.style.width = '100%';
+    buildPlayer();
+    setTimeout(()=>loading.remove(),350);
+    showToast('Explore NAX City • collect the glowing rings');
+    animate();
+  </script>
+</body>
+</html>
